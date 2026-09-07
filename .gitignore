@@ -1,0 +1,8 @@
+# Rojo build outputs
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+
+# Roblox Studio local state
+*.lock
