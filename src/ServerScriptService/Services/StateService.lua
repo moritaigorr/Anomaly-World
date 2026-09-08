@@ -52,6 +52,7 @@ function StateService.Start()
 						stunned = now < s.stunUntil,
 						sprinting = s.sprinting,
 						coreName = core and core.nome or s.equippedCore,
+						coreColor = core and core.cor,
 						database = s.database,
 						cooldowns = cds,
 					})
