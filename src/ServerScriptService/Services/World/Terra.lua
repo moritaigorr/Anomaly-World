@@ -25,6 +25,11 @@ function Terra.build()
 	-- ter meio-tom pra sombrear.
 	Terrain:SetMaterialColor(Enum.Material.Snow, Color3.fromRGB(196, 205, 214))
 	Terrain:SetMaterialColor(Enum.Material.Rock, Color3.fromRGB(92, 92, 92))
+	-- CALÇAMENTO. O Cobblestone padrão do terreno puxa pro marrom-tijolo; a
+	-- referência é paralelepípedo de GRANITO — cinza frio, quase sem saturação,
+	-- com a neve entrando nas juntas em vez de se acumular por cima. Cinza frio
+	-- também separa a rua da madeira das casas, que é toda quente.
+	Terrain:SetMaterialColor(Enum.Material.Cobblestone, Color3.fromRGB(132, 134, 138))
 	-- Chão batido CINZENTO, não marrom quente: no meio de um mapa nevado um
 	-- marrom saturado lê como lama de outono e briga com a paleta fria.
 	Terrain:SetMaterialColor(Enum.Material.Ground, Color3.fromRGB(76, 71, 64))

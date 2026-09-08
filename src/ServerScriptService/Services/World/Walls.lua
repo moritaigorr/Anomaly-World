@@ -255,14 +255,19 @@ local function gatehouse(k: Cfg)
 			Material = Enum.Material.WoodPlanks,
 		})
 	end
-	-- estrada saindo do portão pro mundo
-	Build.part({
-		Size = Vector3.new(20, 0.5, 120),
-		CFrame = CFrame.new(0, 0.25, z - 70),
-		Color = C.DIRT,
-		Material = Enum.Material.Ground,
-		CanCollide = false,
-	})
+	-- ESTRADA SAINDO DO PORTÃO. Fora dos muros ninguém assentou pedra: aqui é
+	-- terra batida mesmo. E era uma LAJE de 20x0,5 pousada em y=0,25 — ou seja,
+	-- enterrada, porque a superfície do terreno está em y≈2. Agora é terreno
+	-- pintado e nivelado, em blocos sobrepostos pra borda não sair de régua.
+	for i = 0, 11 do
+		local zz = z - 12 - i * 11
+		Build.paintGround(
+			(math.random() - 0.5) * 3,
+			zz,
+			18 + math.random() * 7,
+			Enum.Material.Ground
+		)
+	end
 end
 
 function Walls.build(config: Config?)

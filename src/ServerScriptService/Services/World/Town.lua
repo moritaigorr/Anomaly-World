@@ -62,15 +62,23 @@ local function house(pos: Vector3, w: number, d: number, floors: number, ang: nu
 	-- Neve acumulada no pé da parede. Sem isso parede e chão se encontram numa
 	-- linha reta e dura e a casa parece POUSADA sobre a neve em vez de estar
 	-- enterrada nela desde novembro.
+	-- A casa encara +Z, então a PORTA fica no meio da face +Z. O terceiro monte
+	-- caía exatamente ali e o jogador tinha que escalar neve pra entrar. Neve
+	-- acumula onde o vento deposita e ninguém pisa: nas laterais e nos cantos
+	-- de trás — nunca na soleira, que é o primeiro lugar que alguém limpa.
 	for _, o in
 		{
-			Vector3.new(w / 2 + 0.7, 0, d * 0.22),
-			Vector3.new(-w / 2 - 0.7, 0, -d * 0.28),
-			Vector3.new(w * 0.12, 0, d / 2 + 0.7),
+			Vector3.new(w / 2 + 0.9, 0, d * 0.18),
+			Vector3.new(-w / 2 - 0.9, 0, -d * 0.22),
+			Vector3.new(w / 2 + 0.6, 0, -d / 2 - 0.6),
+			Vector3.new(-w / 2 - 0.6, 0, -d / 2 - 0.6),
 		}
 	do
-		Build.drift((base * o) + Vector3.new(0, 0.35, 0), 1.5, 2.5)
+		Build.drift((base * o) + Vector3.new(0, 0.35, 0), 1.3, 2.3)
 	end
+	-- e limpa a soleira, caso a neve espalhada da cidade tenha caído ali
+	local doorAt = base * Vector3.new(0, 0, d / 2 + 2.2)
+	Build.paintGround(doorAt.X, doorAt.Z, 7, Enum.Material.Cobblestone)
 
 	-- cornija separando pedra e reboco (quebra a leitura de "bloco único")
 	if floors > 1 then
@@ -411,54 +419,55 @@ end
 -- a FORMA denuncia o código antes de qualquer textura. Preenchendo em pedaços
 -- sobrepostos, com largura e giro sorteados, a borda sai irregular de graça —
 -- e o voxel de 4 studs já serrilha o resto.
-local function trodden(cf: CFrame, width: number, len: number)
-	-- NÚCLEO BATIDO. Onde passam cavalo, carroça e gente o dia inteiro a neve
-	-- simplesmente não fica. Pintado com ReplaceMaterial (não FillBlock: veja o
-	-- comentário em Build.paintGround) em quadrados sobrepostos com largura e
-	-- posição sorteadas, então a borda sai irregular sozinha.
-	local step = math.max(5, width * 0.42)
+local function trodden(cf: CFrame, width: number, len: number, mat: Enum.Material)
+	-- FAIXA PAVIMENTADA, contínua e NIVELADA.
+	--
+	-- A largura é CONSTANTE de propósito. Antes era sorteada (0,54 a 0,76 da via)
+	-- e o passo era grande: entre um quadrado e o outro sobrava vão, e era
+	-- exatamente nesses vãos que a neve ficava em cima da rua. Rua de pedra não
+	-- sofre influência da neve — ela está assentada, sempre no mesmo nível.
+	local paveW = width * 0.82
+	local step = width * 0.5 -- metade da largura: garante sobreposição
 	local n = math.max(1, math.ceil(len / step))
 	for i = 0, n - 1 do
 		local t = -len / 2 + step * (i + 0.5)
-		local p = (cf * CFrame.new((math.random() - 0.5) * width * 0.16, 0, t)).Position
-		Build.paintGround(p.X, p.Z, width * (0.54 + math.random() * 0.22))
+		-- jitter pequeno só pra borda não sair de régua; nunca o bastante pra abrir vão
+		local p = (cf * CFrame.new((math.random() - 0.5) * 1.6, 0, t)).Position
+		Build.paintGround(p.X, p.Z, paveW, mat)
 	end
 
-	-- NEVE REMANESCENTE nas margens, rareando em direção ao miolo. Também é
-	-- TERRENO (bolas que se fundem), não peça: é o degradê entre pisoteado e
-	-- intocado que desenha a estrada, e ele precisa ser macio pra funcionar.
+	-- NEVE só FORA da faixa pavimentada, rareando em direção a ela. É o degradê
+	-- que desenha a rua — mas ele acontece na margem, nunca sobre a pedra.
 	local sstep = 6
 	local m = math.max(1, math.floor(len / sstep))
 	for i = 0, m - 1 do
 		local t = -len / 2 + sstep * (i + 0.5)
 		for _, sx in { -1, 1 } do
-			-- duas faixas: a de fora quase sempre, a de dentro raramente
-			for _, band in { { u = 0.62, chance = 0.9, size = 4.6 }, { u = 0.46, chance = 0.35, size = 3.0 } } do
+			for _, band in { { u = 0.75, chance = 0.9, size = 4.6 }, { u = 0.58, chance = 0.4, size = 3.0 } } do
 				if math.random() < band.chance then
 					local at = (cf * CFrame.new(sx * band.u * width, 0, t + (math.random() - 0.5) * 4)).Position
-					Build.drift(Vector3.new(at.X, 2, at.Z), 1.6, band.size)
+					Build.drift(Vector3.new(at.X, 2, at.Z), 1.5, band.size)
 				end
 			end
 		end
 	end
 end
 
--- ESTRADA.
--- Antes era uma laje de pedra de 0,5 stud pousada 0,55 acima do terreno. De
--- perto o jogador via a aresta reta da laje FLUTUANDO sobre a neve, com a
--- textura esticada — era o defeito que mais gritava "amador" na cidade inteira.
---
--- Agora a rua é TERRENO: trocamos a neve por chão batido na faixa da rua. Sem
--- peça, sem aresta reta, e o voxel de 4 studs dá uma borda naturalmente
--- irregular em vez de uma régua. A neve fica empilhada nas margens, onde
--- ninguém pisa — que é exatamente como um caminho batido se lê na neve.
-local function road(from: Vector3, to: Vector3, width: number)
+-- Rua DENTRO da vila é CALÇADA, não terra: é uma cidade murada com praça de
+-- pedra, e o mesmo calçamento tem que continuar pelas ruas. Terra batida fica
+-- para as estradas de FORA dos muros, onde ninguém assentou pedra.
+-- Registro das ruas pavimentadas, pra poder repavimentar no fim.
+local paved: { { from: Vector3, to: Vector3, width: number, mat: Enum.Material } } = {}
+
+local function road(from: Vector3, to: Vector3, width: number, mat: Enum.Material?)
 	local d = to - from
 	local len = Vector3.new(d.X, 0, d.Z).Magnitude
 	local mid = Vector3.new((from.X + to.X) / 2, 0, (from.Z + to.Z) / 2)
 	local cf = CFrame.lookAt(mid, Vector3.new(to.X, 0, to.Z))
 
-	trodden(cf, width, len)
+	local material = mat or Enum.Material.Cobblestone
+	table.insert(paved, { from = from, to = to, width = width, mat = material })
+	trodden(cf, width, len, material)
 
 	-- montes de neve irregulares nas duas margens
 	local n = math.max(3, math.floor(len / 13))
@@ -853,6 +862,25 @@ function Town.build()
 	Market.build(MARKET_C, MARKET_R)
 	buildDistricts()
 	buildKeep()
+
+	-- REPAVIMENTAÇÃO FINAL.
+	-- Rua de pedra e praça não sofrem influência da neve: estão assentadas,
+	-- sempre no mesmo nível. Como qualquer monte de neve espalhado depois pode
+	-- transbordar por cima delas, a garantia é dada AQUI, no fim, e não por
+	-- ordem de chamadas — que é frágil e já falhou duas vezes.
+	for _, r in paved do
+		local d = r.to - r.from
+		local len = Vector3.new(d.X, 0, d.Z).Magnitude
+		local mid = Vector3.new((r.from.X + r.to.X) / 2, 0, (r.from.Z + r.to.Z) / 2)
+		local cf = CFrame.lookAt(mid, Vector3.new(r.to.X, 0, r.to.Z))
+		local paveW = r.width * 0.82
+		local step = r.width * 0.5
+		for i = 0, math.max(1, math.ceil(len / step)) - 1 do
+			local p = (cf * CFrame.new(0, 0, -len / 2 + step * (i + 0.5))).Position
+			Build.paintGround(p.X, p.Z, paveW, r.mat)
+		end
+	end
+	Market.repave(MARKET_C, MARKET_R)
 end
 
 return Town

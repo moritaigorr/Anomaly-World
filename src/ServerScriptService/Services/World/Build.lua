@@ -273,6 +273,30 @@ function Build.roofSnow(rcf: CFrame, slopeLen: number, depth: number, dir: numbe
 	end
 end
 
+-- DISCO DE CHÃO PLANO.
+--
+-- Pintar uma praça com vários quadrados sorteados e sobrepostos SEMPRE deixa
+-- vãos entre eles, e é justamente nos vãos que sobra neve e terra. Praça de
+-- pedra é uma superfície só: um cilindro sólido, de uma vez, perfeitamente
+-- nivelado. Dentro do perímetro não existe neve nem terra — só o calçamento.
+function Build.paintDisc(cx: number, cz: number, radius: number, material: Enum.Material?)
+	local mat = material or Enum.Material.Cobblestone
+	-- limpa TUDO acima do nível do chão (monte de neve, terra empilhada, o que for)
+	workspace.Terrain:FillCylinder(
+		CFrame.new(cx, GROUND_TOP + 26, cz),
+		52,
+		radius,
+		Enum.Material.Air
+	)
+	-- e preenche sólido até exatamente o nível
+	workspace.Terrain:FillCylinder(
+		CFrame.new(cx, GROUND_TOP - 10, cz),
+		20,
+		radius,
+		mat
+	)
+end
+
 -- MONTE DE NEVE.
 --
 -- Isto era feito com PEÇAS e o resultado eram caixas brancas retangulares
@@ -289,8 +313,24 @@ function Build.drift(pos: Vector3, spread: number, size: number)
 		local a = math.random() * math.pi * 2
 		local r = math.random() * spread
 		local x, z = pos.X + math.cos(a) * r, pos.Z + math.sin(a) * r
-		-- neve não nasce em chão batido: preserva a terra plana da rua e da praça
-		if not Build.isSnowAt(x, z) then
+		local rad = size * (0.6 + math.random() * 0.55)
+
+		-- A PEGADA INTEIRA tem que estar em neve, não só o centro.
+		-- Testar só o centro era o bug: uma bola nascia legitimamente na neve ao
+		-- lado da rua e TRANSBORDAVA por cima da pedra, misturando os dois
+		-- terrenos e levantando o calçamento. Neve, terra e pedra são três
+		-- superfícies distintas — nenhuma invade a outra.
+		local footprintClear = Build.isSnowAt(x, z)
+		if footprintClear then
+			for k = 0, 3 do
+				local ang = k * math.pi / 2
+				if not Build.isSnowAt(x + math.cos(ang) * rad, z + math.sin(ang) * rad) then
+					footprintClear = false
+					break
+				end
+			end
+		end
+		if not footprintClear then
 			continue
 		end
 		-- TRAVA DE ACÚMULO. groundY mede o terreno, e o terreno já inclui a neve
@@ -299,7 +339,6 @@ function Build.drift(pos: Vector3, spread: number, size: number)
 		-- altura que o chamador pediu, não absoluto, pra continuar funcionando
 		-- em encosta.
 		local y = math.min(Build.groundY(x, z, pos.Y), pos.Y + 2.0)
-		local rad = size * (0.6 + math.random() * 0.55)
 		-- quanto o monte sobe acima do chão: raso, senão vira parede de neve
 		local rise = size * (0.2 + math.random() * 0.22)
 		workspace.Terrain:FillBall(Vector3.new(x, y - rad + rise, z), rad, Enum.Material.Snow)

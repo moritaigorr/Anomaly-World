@@ -102,29 +102,39 @@ local function vendorNPC(cf: CFrame, v: Vendor): Model
 		return p
 	end
 
-	local skin = Color3.fromRGB(206, 170, 138)
+	-- PROPORÇÃO. A versão anterior tinha 7,3 studs de altura, tronco de 2,5 de
+	-- largura e um capuz de 1,75 por cima de uma cabeça de 1,35 — o capuz
+	-- ENGOLIA a cabeça e o conjunto virava um bloco marrom sem silhueta. Aqui a
+	-- proporção segue o boneco R6, que é a silhueta humana que todo jogador de
+	-- Roblox já reconhece de longe: ~5,4 studs, ombro estreito, cabeça separada.
+	local skin = Color3.fromRGB(214, 178, 146)
+	local dark = Color3.fromRGB(46, 40, 36)
 
-	-- pernas curtas: o balcão esconde da cintura pra baixo, então não vale
-	-- gastar peça em detalhe que ninguém vê
-	piece(Vector3.new(0.85, 2.4, 0.85), CFrame.new(-0.55, 1.2, 0), Color3.fromRGB(52, 44, 38), Enum.Material.Fabric)
-	piece(Vector3.new(0.85, 2.4, 0.85), CFrame.new(0.55, 1.2, 0), Color3.fromRGB(52, 44, 38), Enum.Material.Fabric)
+	-- pernas
+	piece(Vector3.new(0.95, 2.0, 0.95), CFrame.new(-0.52, 1.0, 0), dark, Enum.Material.Fabric)
+	piece(Vector3.new(0.95, 2.0, 0.95), CFrame.new(0.52, 1.0, 0), dark, Enum.Material.Fabric)
 
-	-- túnica (tronco) — cor do ofício
-	local torso = piece(Vector3.new(2.5, 3.0, 1.5), CFrame.new(0, 3.9, 0), v.tunica, Enum.Material.Fabric)
-	-- cinto
-	piece(Vector3.new(2.62, 0.42, 1.62), CFrame.new(0, 2.7, 0), Color3.fromRGB(58, 42, 30), Enum.Material.Fabric)
-	-- braços
-	piece(Vector3.new(0.8, 2.6, 0.8), CFrame.new(-1.62, 3.9, 0), v.tunica, Enum.Material.Fabric)
-	piece(Vector3.new(0.8, 2.6, 0.8), CFrame.new(1.62, 3.9, 0), v.tunica, Enum.Material.Fabric)
-	-- mãos
-	piece(Vector3.new(0.7, 0.6, 0.7), CFrame.new(-1.62, 2.5, 0), skin, Enum.Material.Plastic)
-	piece(Vector3.new(0.7, 0.6, 0.7), CFrame.new(1.62, 2.5, 0), skin, Enum.Material.Plastic)
+	-- tronco: 1,9 de largura (não 2,5). Ombro estreito é o que dá leitura de
+	-- pessoa; largo demais lê como caixa.
+	local torso = piece(Vector3.new(1.9, 2.0, 1.0), CFrame.new(0, 3.0, 0), v.tunica, Enum.Material.Fabric)
+	-- avental/faixa clara atravessando o peito: quebra o bloco de cor única e
+	-- destaca o vendedor da madeira da barraca, que é do mesmo tom
+	piece(Vector3.new(1.96, 0.7, 1.06), CFrame.new(0, 2.55, 0), Color3.fromRGB(198, 188, 168), Enum.Material.Fabric)
+	piece(Vector3.new(1.96, 0.34, 1.06), CFrame.new(0, 3.7, 0), dark, Enum.Material.Fabric)
 
-	-- cabeça e capuz
-	piece(Vector3.new(1.35, 1.35, 1.35), CFrame.new(0, 6.1, 0), skin, Enum.Material.Plastic)
-	piece(Vector3.new(1.75, 1.1, 1.75), CFrame.new(0, 6.75, 0), v.tunica, Enum.Material.Fabric)
-	-- ombro do capuz caindo nas costas
-	piece(Vector3.new(2.1, 1.2, 1.0), CFrame.new(0, 5.6, -0.5), v.tunica, Enum.Material.Fabric)
+	-- braços, um pouco afastados do corpo pra silhueta não fundir
+	for _, sx in { -1, 1 } do
+		piece(Vector3.new(0.72, 1.9, 0.72), CFrame.new(sx * 1.36, 3.0, 0), v.tunica, Enum.Material.Fabric)
+		piece(Vector3.new(0.66, 0.5, 0.66), CFrame.new(sx * 1.36, 1.9, 0), skin, Enum.Material.Plastic)
+	end
+
+	-- pescoço + cabeça SEPARADA do tronco (o vão é o que faz ler cabeça)
+	piece(Vector3.new(0.6, 0.4, 0.6), CFrame.new(0, 4.2, 0), skin, Enum.Material.Plastic)
+	piece(Vector3.new(1.15, 1.15, 1.15), CFrame.new(0, 5.0, 0), skin, Enum.Material.Plastic)
+	-- capuz caído nas COSTAS, não sobre a cabeça
+	piece(Vector3.new(1.3, 1.0, 0.55), CFrame.new(0, 4.5, -0.62), v.tunica, Enum.Material.Fabric)
+	-- gorro raso: cobre o topo sem apagar o rosto
+	piece(Vector3.new(1.25, 0.42, 1.25), CFrame.new(0, 5.62, 0), v.tunica, Enum.Material.Fabric)
 
 	model.PrimaryPart = torso
 
@@ -132,7 +142,7 @@ local function vendorNPC(cf: CFrame, v: Vendor): Model
 	local tag = Instance.new("BillboardGui")
 	tag.Name = "Placa"
 	tag.Size = UDim2.new(0, 210, 0, 42)
-	tag.StudsOffsetWorldSpace = Vector3.new(0, 4.6, 0)
+	tag.StudsOffsetWorldSpace = Vector3.new(0, 3.4, 0)
 	tag.AlwaysOnTop = false
 	tag.MaxDistance = 90
 	tag.Parent = torso
@@ -177,7 +187,7 @@ end
 -- Toldo listrado: tiras alternadas em vez de uma lona sólida. É a diferença
 -- entre "pano colorido" e "mercado".
 local function stripedAwning(ridge: CFrame, width: number, slopeLen: number, a: Color3, b: Color3)
-	local PITCH = math.rad(28)
+	local PITCH = math.rad(26)
 	local stripeW = 1.5
 	local n = math.floor(width / stripeW)
 	local used = n * stripeW
@@ -218,7 +228,13 @@ end
 
 local function stall(cf: CFrame, v: Vendor)
 	local W, D = 16, 11
-	local POST_H = 8.2
+	-- Postes mais altos e cumeeira mais alta. Antes o beiral do toldo caía a 4
+	-- studs do chão — ABAIXO da cabeça do vendedor —, então de frente só se via
+	-- lona: a barraca virava uma tampa listrada sobre caixas. Agora o beiral fica
+	-- a ~7,5 studs e dá pra ver quem está atrás do balcão.
+	local POST_H = 9.5
+	local RIDGE_UP = 2.8
+	local SLOPE = 6.4
 
 	-- 4 postes de canto
 	for _, sx in { -1, 1 } do
@@ -228,18 +244,18 @@ local function stall(cf: CFrame, v: Vendor)
 		end
 	end
 
-	stripedAwning(cf * CFrame.new(0, POST_H + 1.5, 0), W, D * 0.72, v.corA, v.corB)
+	stripedAwning(cf * CFrame.new(0, POST_H + RIDGE_UP, 0), W, SLOPE, v.corA, v.corB)
 
 	-- BALCÃO na frente (+Z), com tampo saliente e painel fechando embaixo
 	Build.part({
 		Size = Vector3.new(W - 1.4, 0.5, 3.0),
-		CFrame = cf * CFrame.new(0, 4.0, D / 2 - 1.6),
+		CFrame = cf * CFrame.new(0, 3.4, D / 2 - 1.6),
 		Color = C.WOOD,
 		Material = Enum.Material.WoodPlanks,
 	})
 	Build.part({
-		Size = Vector3.new(W - 2.2, 3.5, 0.5),
-		CFrame = cf * CFrame.new(0, 2.2, D / 2 - 0.4),
+		Size = Vector3.new(W - 2.2, 3.1, 0.5),
+		CFrame = cf * CFrame.new(0, 1.75, D / 2 - 0.4),
 		Color = C.WOOD_DARK,
 		Material = Enum.Material.WoodPlanks,
 	})
@@ -275,7 +291,7 @@ local function stall(cf: CFrame, v: Vendor)
 		if math.random() < 0.6 then
 			Build.part({
 				Size = Vector3.new(1.1, 0.5, 1.1),
-				CFrame = cf * CFrame.new(i * 2.8, 4.5, D / 2 - 1.6) * CFrame.Angles(0, math.random() * 2, 0),
+				CFrame = cf * CFrame.new(i * 2.8, 3.9, D / 2 - 1.6) * CFrame.Angles(0, math.random() * 2, 0),
 				Color = Build.tint(C.WOOD, 0.1),
 				Material = Enum.Material.WoodPlanks,
 				CanCollide = false,
@@ -286,7 +302,7 @@ local function stall(cf: CFrame, v: Vendor)
 	-- placa do ofício, pendurada na frente do toldo
 	local sign = Build.part({
 		Size = Vector3.new(7.5, 1.9, 0.3),
-		CFrame = cf * CFrame.new(0, POST_H + 0.2, D / 2 - 0.2),
+		CFrame = cf * CFrame.new(0, POST_H + 1.0, D / 2 - 0.2),
 		Color = C.WOOD_DARK,
 		Material = Enum.Material.WoodPlanks,
 		CanCollide = false,
@@ -320,9 +336,9 @@ end
 local function brazier(pos: Vector3)
 	-- Brasa acesa o dia inteiro não deixa neve acumular em volta. É esse anel
 	-- pelado que faz o fogo parecer QUENTE em vez de decorativo.
-	Build.paintGround(pos.X, pos.Z, 17)
-	Build.paintGround(pos.X + 6, pos.Z - 4, 11)
-	Build.paintGround(pos.X - 5, pos.Z + 6, 10)
+	Build.paintGround(pos.X, pos.Z, 17, Enum.Material.Cobblestone)
+	Build.paintGround(pos.X + 6, pos.Z - 4, 11, Enum.Material.Cobblestone)
+	Build.paintGround(pos.X - 5, pos.Z + 6, 10, Enum.Material.Cobblestone)
 
 	Build.post(pos, 3.2, 2.6, C.STONE_DARK, Enum.Material.Cobblestone)
 	Build.post(pos + Vector3.new(0, 3.0, 0), 1.4, 4.2, C.STONE, Enum.Material.Cobblestone)
@@ -498,53 +514,45 @@ local function lightLine(a: Vector3, b: Vector3)
 	end
 end
 
+-- Repavimenta a praça. Chamado no FIM da construção da cidade.
+-- Nenhuma ordem de chamadas garante que a neve não invada: Build.drift testa se
+-- há neve no CENTRO da bola, mas a bola tem raio, então um monte que nasce
+-- legitimamente fora do perímetro ainda transborda pra dentro. Em vez de tentar
+-- prever cada caso, a invariante é imposta no fim: praça é pedra plana, ponto.
+function Market.repave(center: Vector3, radius: number)
+	-- +5 de folga porque o voxel tem 4 studs: um cilindro de raio 52 sai
+	-- SERRILHADO, e sobrava neve nos entalhes da borda (medido: 34 de 432
+	-- amostras). A folga cobre a quantização sem mover o limite visual, que
+	-- quem desenha é a neve encostada por fora.
+	Build.paintDisc(center.X, center.Z, radius + 5, Enum.Material.Cobblestone)
+end
+
 -- =================================================================== PRAÇA
 function Market.build(center: Vector3, radius: number)
 	-- CHÃO DA PRAÇA.
 	--
-	-- Isto eram 90 LAJES de calçamento sorteadas e sobrepostas, cada uma com
-	-- rotação e tamanho aleatórios, todas na mesma altura. O resultado é o que
-	-- se vê quando se olha pra baixo: retângulo em cima de retângulo brigando
-	-- por z, com quinas soltas apontando pra tudo quanto é lado.
-	--
-	-- Chão é TERRENO. Já aprendi isso na neve e não apliquei aqui. O terreno
-	-- tem material Cobblestone: superfície ÚNICA, contínua, sem sobreposição,
-	-- sem z-fighting, com iluminação e textura próprias — e custa zero peça.
-	--
-	-- A praça fica em dois anéis: calçamento no miolo (onde fica o monumento e
-	-- circula gente) e terra batida em volta (onde ficam as barracas), porque
-	-- calçamento até a borda vira um disco perfeito de novo.
-	local paved = radius * 0.5
-	for i = 1, 18 do
-		local a = (i / 18) * math.pi * 2 + math.random() * 0.25
-		local off = math.sqrt(math.random()) * paved * 0.5
-		Build.paintGround(
-			center.X + math.cos(a) * off,
-			center.Z + math.sin(a) * off,
-			paved * (0.7 + math.random() * 0.4),
-			Enum.Material.Cobblestone
-		)
-	end
-	-- anel de terra batida em volta do calçamento
-	for i = 1, 22 do
-		local a = (i / 22) * math.pi * 2 + math.random() * 0.2
-		local off = paved * 0.85 + math.random() * radius * 0.28
-		Build.paintGround(
-			center.X + math.cos(a) * off,
-			center.Z + math.sin(a) * off,
-			radius * (0.3 + math.random() * 0.2)
-		)
-	end
+	-- UM disco sólido, de uma vez. Antes eram dezenas de quadrados sorteados e
+	-- sobrepostos, e entre eles sempre sobrava vão — era nos vãos que a neve e a
+	-- terra ficavam dentro da praça. Aqui dentro do perímetro não existe neve
+	-- nem terra batida: só calçamento, perfeitamente nivelado.
+	Build.paintDisc(center.X, center.Z, radius, Enum.Material.Cobblestone)
 
-	-- neve sobrando na borda
-	for i = 1, 40 do
-		local a = (i / 40) * math.pi * 2 + math.random() * 0.14
-		local r = radius * (0.82 + math.random() * 0.2)
-		Build.drift(center + Vector3.new(math.cos(a) * r, 0.35, math.sin(a) * r), 3.4, 4.4)
+	-- A neve volta a existir SÓ FORA do perímetro, encostada na borda. É ela que
+	-- desenha o limite da praça — não uma aresta de geometria.
+	-- A distância mínima leva em conta o RAIO DA BOLA, não só o centro dela: um
+	-- monte centrado a 3 studs da borda com bola de 5 ainda invade 2 studs de
+	-- praça. Medido: com radius+3 sobravam 7 amostras de neve dentro do
+	-- perímetro e 1,5 stud de desnível.
+	for i = 1, 46 do
+		local a = (i / 46) * math.pi * 2 + math.random() * 0.1
+		local r = radius + 9 + math.random() * 10
+		Build.drift(center + Vector3.new(math.cos(a) * r, 2, math.sin(a) * r), 2.4, 4.4)
 	end
 
 	-- MONUMENTO central: pedra de juramento com runa. Dá um ponto focal e um
 	-- lugar natural pra jogador ficar parado esperando amigo.
+	local gy = Build.groundY(center.X, center.Z, 2)
+	center = Vector3.new(center.X, gy, center.Z)
 	Build.post(center, 1.4, 16, C.STONE_DARK, Enum.Material.Cobblestone)
 	Build.post(center + Vector3.new(0, 1.2, 0), 1.2, 12, C.STONE, Enum.Material.Cobblestone)
 	Build.part({
@@ -567,7 +575,8 @@ function Market.build(center: Vector3, radius: number)
 	-- BRASEIROS em volta do monumento
 	for i = 0, 3 do
 		local a = (i / 4) * math.pi * 2 + math.rad(45)
-		brazier(center + Vector3.new(math.cos(a) * 22, 0, math.sin(a) * 22))
+		local bx, bz = center.X + math.cos(a) * 22, center.Z + math.sin(a) * 22
+		brazier(Vector3.new(bx, Build.groundY(bx, bz, 2), bz))
 	end
 
 	-- BARRACAS. Os ângulos são EXPLÍCITOS, não um anel regular, por um motivo
@@ -580,16 +589,22 @@ function Market.build(center: Vector3, radius: number)
 	local ringR = radius * 0.74
 	local postTops: { Vector3 } = {}
 
+	-- ALTURA REAL DO CHÃO. Tudo aqui era construído assumindo y=0, mas a
+	-- superfície do terreno fica em y≈2: a praça inteira nascia DOIS STUDS
+	-- ENTERRADA. É por isso que o toldo parecia baixo demais e o vendedor
+	-- sumia atrás do balcão.
 	for i, v in VENDORS do
 		local a = math.rad(STALL_ANGLES[i] or (i * 60))
-		local p = center + Vector3.new(math.cos(a) * ringR, 0, math.sin(a) * ringR)
+		local px, pz = center.X + math.cos(a) * ringR, center.Z + math.sin(a) * ringR
+		local p = Vector3.new(px, Build.groundY(px, pz, 2), pz)
 		-- a frente da barraca (+Z local) tem que olhar pro centro
 		stall(CFrame.lookAt(p, Vector3.new(center.X, p.Y, center.Z)), v)
 	end
 
 	for _, deg in LAMP_ANGLES do
 		local a = math.rad(deg)
-		local lp = center + Vector3.new(math.cos(a) * ringR, 0, math.sin(a) * ringR)
+		local lx, lz = center.X + math.cos(a) * ringR, center.Z + math.sin(a) * ringR
+		local lp = Vector3.new(lx, Build.groundY(lx, lz, 2), lz)
 		Build.lantern(lp, true)
 		table.insert(postTops, lp + Vector3.new(0, 8.4, 0))
 	end
@@ -606,7 +621,8 @@ function Market.build(center: Vector3, radius: number)
 	-- lista explícita de ângulos — e o erro derrubava a construção da CIDADE
 	-- INTEIRA, não só do banco.
 	local ba = math.rad(110)
-	local bp = center + Vector3.new(math.cos(ba) * (radius + 16), 0, math.sin(ba) * (radius + 16))
+	local bx, bz = center.X + math.cos(ba) * (radius + 16), center.Z + math.sin(ba) * (radius + 16)
+	local bp = Vector3.new(bx, Build.groundY(bx, bz, 2), bz)
 	bank(CFrame.lookAt(bp, Vector3.new(center.X, bp.Y, center.Z)))
 end
 
