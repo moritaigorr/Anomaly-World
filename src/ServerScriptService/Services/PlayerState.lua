@@ -17,6 +17,7 @@ export type State = {
 	attackCdUntil: number, -- ritmo entre golpes do combo
 	blocking: boolean,     -- segurando o bloqueio
 	blockStart: number,    -- os.clock() de quando começou a bloquear (janela de parry)
+	sprinting: boolean,    -- correndo (Shift): drena stamina enquanto se move
 	posture: number,       -- guarda restante
 	postureHitAt: number,  -- última vez que a guarda levou dano
 	stunUntil: number,     -- atordoado (guarda quebrada): não pode agir
@@ -46,6 +47,7 @@ function PlayerState.init(player: Player)
 		attackCdUntil = 0,
 		blocking = false,
 		blockStart = 0,
+		sprinting = false,
 		posture = Constants.Posture.Max,
 		postureHitAt = 0,
 		stunUntil = 0,
@@ -110,6 +112,7 @@ function PlayerState.resetCombat(player: Player)
 	s.posture = Constants.Posture.Max
 	s.stunUntil = 0
 	s.blocking = false
+	s.sprinting = false
 	s.comboIndex = 0
 	s.stamina = Constants.Player.MaxStamina
 end

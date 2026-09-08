@@ -7,7 +7,7 @@ local Constants = {}
 
 -- Carimbo de versão. Mude isto sempre que quiser confirmar, DENTRO DO JOGO, que
 -- o código novo realmente chegou ao Studio (aparece no cantinho do HUD).
-Constants.BUILD_ID = "B15-muralha-continua"
+Constants.BUILD_ID = "B16-sprint-servidor"
 
 Constants.Player = {
 	MaxHealth = 100,
@@ -90,6 +90,22 @@ Constants.Enemy = {
 	Posture = 45,        -- guarda do inimigo (1 parry já quebra a do slime)
 	BreakStun = 3,       -- tempo atordoado quando a guarda dele quebra
 	Windup = 0.55,       -- AVISO antes do golpe: é a janela pra você defender/esquivar
+}
+
+-- MOVIMENTO base. As velocidades vivem todas aqui porque o MovementService e a
+-- UNICA autoridade que escreve WalkSpeed -- se houver outro escritor, os dois
+-- brigam e o jogador sente a velocidade "pular".
+Constants.Move = {
+	Walk = 16,     -- caminhada normal
+	Blocking = 8,  -- de guarda alta: o peso do souls-like
+}
+
+-- CORRIDA (segurar Shift). Divide a MESMA stamina da esquiva: correr o mapa
+-- inteiro custa a sua proxima esquiva. Essa tensao e o ponto.
+Constants.Sprint = {
+	Speed = 24,          -- 1.5x a caminhada: perceptivel sem virar patinete
+	StaminaPerSec = 12,  -- ~8s de corrida cheia; so cobra enquanto anda de verdade
+	MinToStart = 12,     -- stamina minima pra comecar a correr
 }
 
 return Constants

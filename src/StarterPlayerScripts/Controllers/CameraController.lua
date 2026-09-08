@@ -12,6 +12,11 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local CollectionService = game:GetService("CollectionService")
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Net = require(ReplicatedStorage.Shared.Net)
+
+local StateUpdate = Net.get("StateUpdate")
 
 local player = Players.LocalPlayer
 
@@ -22,9 +27,17 @@ local UNLOCK_RANGE = 120     -- solta o lock se passar disso
 local CAM_DISTANCE = 13      -- quão atrás a câmera fica
 local CAM_HEIGHT = 6
 
+-- FOV. O padrão do Roblox (70) é grande-angular e achata a perspectiva — é um
+-- dos motivos de todo jogo da plataforma "parecer Roblox". 65 lê mais cinema.
+-- Correr abre um pouco: o olho lê isso como velocidade sem precisar de blur.
+local BASE_FOV = 65
+local SPRINT_FOV = 72
+local FOV_LERP = 6 -- por segundo; suave o bastante pra não embrulhar o estômago
+
 local locked: Model? = nil
 local reticle: BillboardGui? = nil
 local facingSuppressedUntil = 0 -- durante dash/impulso não forçamos a rotação
+local sprinting = false -- verdade do SERVIDOR (via StateUpdate), não do teclado
 
 local function getChar(): (Model?, BasePart?, Humanoid?)
 	local char = player.Character
@@ -129,7 +142,17 @@ local function toggleLock()
 end
 
 -- atualização de câmera + orientação por frame
-local function onRender()
+local function onRender(dt: number)
+	-- FOV acompanha a corrida. O alvo vem do SERVIDOR: se ele recusou a corrida
+	-- (sem stamina, de guarda alta), a câmera não abre. A câmera nunca mente.
+	local camera = Workspace.CurrentCamera
+	if camera then
+		local goal = sprinting and SPRINT_FOV or BASE_FOV
+		if math.abs(camera.FieldOfView - goal) > 0.05 then
+			camera.FieldOfView += (goal - camera.FieldOfView) * math.clamp(dt * FOV_LERP, 0, 1)
+		end
+	end
+
 	if not locked then
 		return
 	end
@@ -179,16 +202,18 @@ local function onRender()
 end
 
 function CameraController.Start()
-	-- FOV mais fechado. O padrão do Roblox (70) é bem grande-angular e achata a
-	-- perspectiva — é um dos motivos de todo jogo da plataforma "parecer Roblox".
-	-- Perto de 65 a leitura fica mais próxima de câmera de cinema.
 	pcall(function()
-		Workspace.CurrentCamera.FieldOfView = 65
+		Workspace.CurrentCamera.FieldOfView = BASE_FOV
+	end)
+
+	-- o servidor é quem diz se estamos correndo
+	StateUpdate.OnClientEvent:Connect(function(data)
+		sprinting = data.sprinting == true
 	end)
 	Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
 		local cam = Workspace.CurrentCamera
 		if cam then
-			cam.FieldOfView = 65
+			cam.FieldOfView = BASE_FOV
 		end
 	end)
 

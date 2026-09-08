@@ -17,6 +17,7 @@ local BlockRequest = Net.get("BlockRequest")
 local HeavyRequest = Net.get("HeavyRequest")
 local UltimateRequest = Net.get("UltimateRequest")
 local SwapCoreRequest = Net.get("SwapCoreRequest")
+local SprintRequest = Net.get("SprintRequest")
 
 local player = Players.LocalPlayer
 
@@ -102,6 +103,11 @@ function InputController.Start(deps)
 			if AnimController then
 				AnimController.play("dodge")
 			end
+		elseif input.KeyCode == Enum.KeyCode.LeftShift
+			or input.KeyCode == Enum.KeyCode.RightShift then
+			-- correr: só pedimos. Quem decide (e cobra a stamina) é o servidor,
+			-- que também é o único que mexe no WalkSpeed.
+			SprintRequest:FireServer(true)
 		else
 			local key = POWER_KEYS[input.KeyCode]
 			if key then
@@ -125,12 +131,15 @@ function InputController.Start(deps)
 			if CombatController then
 				CombatController.setBlocking(false)
 			end
+		elseif input.KeyCode == Enum.KeyCode.LeftShift
+			or input.KeyCode == Enum.KeyCode.RightShift then
+			SprintRequest:FireServer(false)
 		end
 	end)
 
 	print(
 		"[InputController] pronto — M1 leve · F pesado · G ultimate · Q esquiva · "
-			.. "botão direito bloqueia/parry · Z/X/C/V poderes · R lock-on"
+			.. "Shift corre · botão direito bloqueia/parry · Z/X/C/V poderes · R lock-on"
 	)
 end
 
