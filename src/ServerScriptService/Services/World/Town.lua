@@ -610,6 +610,14 @@ local function canPlace(x: number, z: number, w: number, d: number): boolean
 	if math.abs(x) < Town.MAIN_ROAD_W / 2 + reach then
 		return false -- em cima da via principal
 	end
+	-- O banco fica FORA do anel da praça. Em vez de inflar o raio de exclusão da
+	-- praça inteira por causa dele (o que já apagou as casas da cidade uma vez),
+	-- ele tem a própria área livre, do tamanho dele.
+	local bc = Market.bankCenter(MARKET_C, MARKET_R)
+	local bx, bz = x - bc.X, z - bc.Z
+	if math.sqrt(bx * bx + bz * bz) < Market.BANK_CLEAR + reach then
+		return false
+	end
 	return true
 end
 

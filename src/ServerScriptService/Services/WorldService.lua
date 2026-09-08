@@ -37,21 +37,20 @@ local SPAWN_POS = ZoneData.SafeCenter + Vector3.new(0, 1.5, 0)
 function WorldService.getSpawnCFrame(): CFrame
 	local x, z = SPAWN_POS.X, SPAWN_POS.Z
 
-	local ignore: { Instance } = {}
-	for _, p in Players:GetPlayers() do
-		if p.Character then
-			table.insert(ignore, p.Character)
-		end
-	end
-
+	-- SÓ O TERRENO conta como chão.
+	-- Antes isto era um raycast contra TUDO, excluindo apenas os personagens:
+	-- descendo de y=400, ele parava no primeiro objeto que encontrasse — telhado
+	-- de casa, cabo do varal de luzes, travessa do arco da rua — e o jogador
+	-- nascia em cima dele. "Chão" aqui significa terreno, e nada mais.
 	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = ignore
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances = { workspace.Terrain }
 	params.IgnoreWater = true
 
 	local hit = workspace:Raycast(Vector3.new(x, 400, z), Vector3.new(0, -900, 0), params)
 	if hit then
-		return CFrame.new(x, hit.Position.Y + 5, z)
+		-- +3 basta: o chão da praça é plano e o personagem tem ~5 studs
+		return CFrame.new(x, hit.Position.Y + 3, z)
 	end
 	-- não achou chão nenhum: joga bem alto (melhor cair do que nascer enterrado)
 	warn("[WorldService] nenhum chão encontrado no spawn — usando altura de segurança")

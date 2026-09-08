@@ -19,6 +19,23 @@ local C = Build.C
 
 local Market = {}
 
+-- POSIÇÃO DO BANCO, exportada porque o Town precisa dela pra não encostar casa
+-- nele. Fica FORA do anel de barracas, num ângulo que mantém o corredor da rua
+-- principal (x≈0) livre — na borda da praça ele acabava a 2,7 studs do ponto de
+-- spawn, e o jogador nascia colado numa parede.
+Market.BANK_ANGLE = math.rad(150)
+Market.BANK_EXTRA = 24 -- quanto além do raio da praça
+Market.BANK_CLEAR = 26 -- raio livre de casas em volta dele
+
+function Market.bankCenter(center: Vector3, radius: number): Vector3
+	local d = radius + Market.BANK_EXTRA
+	return Vector3.new(
+		center.X + math.cos(Market.BANK_ANGLE) * d,
+		center.Y,
+		center.Z + math.sin(Market.BANK_ANGLE) * d
+	)
+end
+
 export type Vendor = {
 	id: string,
 	nome: string,
@@ -610,12 +627,9 @@ function Market.build(center: Vector3, radius: number)
 	-- Antes isto derivava de `n`, que deixou de existir quando o anel virou
 	-- lista explícita de ângulos — e o erro derrubava a construção da CIDADE
 	-- INTEIRA, não só do banco.
-	local ba = math.rad(110)
-	-- Na BORDA da praça, não fora dela. Fora do anel o banco obrigava um raio de
-	-- exclusão de 84 studs, que apagava as casas da cidade inteira.
-	local bankR = radius * 0.88
-	local bx, bz = center.X + math.cos(ba) * bankR, center.Z + math.sin(ba) * bankR
-	local bp = Vector3.new(bx, Build.groundY(bx, bz, 2), bz)
+	local ba = Market.BANK_ANGLE
+	local bc = Market.bankCenter(center, radius)
+	local bp = Vector3.new(bc.X, Build.groundY(bc.X, bc.Z, 2), bc.Z)
 	bank(CFrame.lookAt(bp, Vector3.new(center.X, bp.Y, center.Z)))
 end
 
