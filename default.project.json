@@ -31,7 +31,18 @@
     },
     "Workspace": {
       "$className": "Workspace",
-      "$path": "src/Workspace"
+      "$path": "src/Workspace",
+      "Baseplate": {
+        "$className": "Part",
+        "$properties": {
+          "Anchored": true,
+          "CanCollide": true,
+          "Color": [0.356863, 0.611765, 0.294118],
+          "Material": "Grass",
+          "Position": [0, -0.5, 0],
+          "Size": [512, 1, 512]
+        }
+      }
     }
   }
 }
