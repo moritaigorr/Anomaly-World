@@ -34,8 +34,27 @@ Build.C = {
 local root: Instance? = nil
 local warnedNoRoot = false
 
+-- ORIGEM. Tudo que passa por Build.part nasce transformado por isto. É o que
+-- permite erguer a MESMA cidade em outro canto do mapa, com outra rotação, sem
+-- tocar numa linha de Town.lua nem de Walls.lua: a segunda cidade é configuração,
+-- não cópia. Identidade = comportamento antigo, então nada muda por padrão.
+local origin: CFrame = CFrame.identity
+
 function Build.setRoot(r: Instance)
 	root = r
+end
+
+function Build.setOrigin(cf: CFrame)
+	origin = cf
+end
+
+function Build.getOrigin(): CFrame
+	return origin
+end
+
+-- ponto do mundo a partir de uma coordenada local da cidade
+function Build.toWorld(v: Vector3): Vector3
+	return origin * v
 end
 
 -- Se a raiz não foi definida, as peças nasceriam SEM PAI: invisíveis e sem erro
@@ -62,6 +81,11 @@ function Build.part(props): Part
 	for k, v in props do
 		(p :: any)[k] = v
 	end
+	-- a origem entra DEPOIS das props: quem chama continua pensando em
+	-- coordenadas locais da cidade e não precisa saber onde ela foi parar
+	if origin ~= CFrame.identity then
+		p.CFrame = origin * p.CFrame
+	end
 	p.Parent = (props :: any).Parent or Build.getRoot()
 	return p
 end
@@ -73,6 +97,9 @@ function Build.wedge(props): WedgePart
 	p.Color = Build.C.ROOF_SHINGLE
 	for k, v in props do
 		(p :: any)[k] = v
+	end
+	if origin ~= CFrame.identity then
+		p.CFrame = origin * p.CFrame
 	end
 	p.Parent = (props :: any).Parent or Build.getRoot()
 	return p
@@ -124,6 +151,112 @@ function Build.snow(cf: CFrame, size: Vector3)
 	})
 end
 
+-- ALTURA DO CHÃO em (x, z).
+-- Ninguém deve chutar "y = 0". A superfície do terreno nevado fica em y≈2 por
+-- causa do voxel de 4 studs, e o mapa ainda tem ondulação. Decoração colocada em
+-- y=0,3 ficava ENTERRADA — foi por isso que calçamento e montinhos de neve
+-- simplesmente não apareciam. Só olha pro Terrain, senão uma peça recém-criada
+-- ao lado (parede, barril) rouba o raycast.
+local groundParams = RaycastParams.new()
+groundParams.FilterType = Enum.RaycastFilterType.Include
+groundParams.FilterDescendantsInstances = { workspace.Terrain }
+groundParams.IgnoreWater = true
+
+function Build.groundY(x: number, z: number, fallback: number?): number
+	local hit = workspace:Raycast(Vector3.new(x, 220, z), Vector3.new(0, -400, 0), groundParams)
+	return hit and hit.Position.Y or (fallback or 0)
+end
+
+-- PINTAR O CHÃO (tirar a neve de onde passa gente).
+--
+-- FillBlock é a ferramenta ERRADA pra isto e custou caro descobrir: ele preenche
+-- VOLUME. A superfície da neve não está em y=0 — está em y≈2, porque o voxel de
+-- terreno tem 4 studs e a isosuperfície cai no meio dele. Então preencher com
+-- Ground de -3,2 até 0 pintava só o que estava ENTERRADO: da superfície pra cima
+-- continuava neve, e nenhuma estrada aparecia. Subir o topo do preenchimento
+-- resolvia o material mas LEVANTAVA o terreno num degrau de 1 stud.
+--
+-- ReplaceMaterial troca só o MATERIAL dentro da região e preserva a ocupação,
+-- que é exatamente o que "aqui a neve não fica porque passa cavalo" precisa.
+function Build.paintGround(cx: number, cz: number, size: number, material: Enum.Material?)
+	local half = size / 2
+	local region = Region3.new(
+		Vector3.new(cx - half, -10, cz - half),
+		Vector3.new(cx + half, 12, cz + half)
+	):ExpandToGrid(4)
+	workspace.Terrain:ReplaceMaterial(region, 4, Enum.Material.Snow, material or Enum.Material.Ground)
+end
+
+-- NEVE DE TELHADO.
+-- Uma laje branca retangular com as quatro arestas retas é a coisa que mais
+-- entrega "Roblox" num telhado. Neve de verdade acumula da cumeeira pra baixo e
+-- derrete numa linha IRREGULAR: mais grossa em cima, mais fina embaixo, com
+-- pedaços faltando onde bateu sol ou saiu fumaça da chaminé.
+--
+-- rcf       = CFrame da água do telhado (X = descida, Y = normal, Z = cumeeira)
+-- slopeLen  = comprimento da descida
+-- depth     = comprimento ao longo da cumeeira
+-- dir       = +1/-1: de que lado da cumeeira esta água está
+function Build.roofSnow(rcf: CFrame, slopeLen: number, depth: number, dir: number)
+	-- Faixas ESTREITAS: quanto mais estreita, mais a linha de degelo serrilha.
+	local strips = math.max(5, math.floor(depth / 2.2))
+	local stripD = depth / strips
+
+	-- A cobertura passeia por uma ONDA LENTA em vez de ser sorteada faixa a
+	-- faixa. Sorteio independente produz um pente regular — parece dente de
+	-- serra, não neve. Onda + ruído fino dá manchas contínuas de bordas rasgadas,
+	-- que é como neve realmente derrete num telhado: em placas, não em listras.
+	local phase = math.random() * 6.28
+	local bias = 0.30 + math.random() * 0.16
+
+	for i = 0, strips - 1 do
+		local u = i / strips
+		local wave = math.sin(u * 6.5 + phase) * 0.22 + math.sin(u * 13.0 + phase * 2.1) * 0.10
+		local cover = bias + wave + (math.random() - 0.5) * 0.09
+		-- abaixo disso a placa simplesmente não existe: buraco na cobertura
+		if cover > 0.11 then
+			cover = math.min(cover, 0.80)
+			local len = slopeLen * cover
+			local thick = 0.36 - cover * 0.26 -- grossa na cumeeira, fina na beira
+			Build.part({
+				Size = Vector3.new(len, thick, stripD * 1.02),
+				CFrame = rcf * CFrame.new(
+					-dir * (slopeLen / 2 - len / 2),
+					0.72 + thick / 2, -- acima das fiadas de telha
+					-depth / 2 + stripD * (i + 0.5)
+				),
+				Color = Color3.fromRGB(235, 240, 244),
+				Material = Enum.Material.Snow,
+				CanCollide = false,
+				CastShadow = false,
+			})
+		end
+	end
+end
+
+-- MONTE DE NEVE encostado numa construção ou numa quina.
+-- Sem isto, parede e chão se encontram numa linha reta e dura e as duas parecem
+-- objetos empilhados. Neve acumulada no pé é o que amarra construção e terreno.
+function Build.drift(pos: Vector3, spread: number, size: number)
+	for _ = 1, 3 do
+		local a = math.random() * math.pi * 2
+		local r = math.random() * spread
+		local x, z = pos.X + math.cos(a) * r, pos.Z + math.sin(a) * r
+		local sx = size * (0.7 + math.random() * 0.8)
+		local h = size * (0.32 + math.random() * 0.3)
+		-- assenta no chão de verdade: monte de neve enterrado não existe
+		local y = Build.groundY(x, z, pos.Y)
+		Build.part({
+			Size = Vector3.new(sx, h, sx * (0.6 + math.random() * 0.7)),
+			CFrame = CFrame.new(x, y + h * 0.22, z) * CFrame.Angles(0, math.random() * math.pi * 2, 0),
+			Color = Color3.fromRGB(237, 241, 245),
+			Material = Enum.Material.Snow,
+			CanCollide = false,
+			CastShadow = false,
+		})
+	end
+end
+
 -- janela: VIDRO (não neon puro). O erro anterior era um retângulo neon 100%
 -- opaco e enorme — é o que dava aquele brilho chapado de Roblox.
 function Build.window(cf: CFrame, w: number, h: number, lit: boolean?)
@@ -138,14 +271,17 @@ function Build.window(cf: CFrame, w: number, h: number, lit: boolean?)
 		CanCollide = false,
 		CastShadow = false,
 	})
-	-- brilho interno DISCRETO (translúcido, atrás do vidro)
+	-- Brilho interno. A 0,52 de transparência o Neon estourava com o bloom e a
+	-- janela virava um RETÂNGULO AMARELO CHAPADO — uma das coisas que mais
+	-- entregam "Roblox" numa fachada à noite. O que vende luz de dentro não é o
+	-- painel brilhante: é o vidro âmbar mais a luz caindo na parede em volta.
 	if lit then
 		Build.part({
-			Size = Vector3.new(w * 0.82, h * 0.82, 0.1),
+			Size = Vector3.new(w * 0.7, h * 0.7, 0.1),
 			CFrame = cf * CFrame.new(0, 0, -0.16),
-			Color = Color3.fromRGB(255, 198, 132),
+			Color = Color3.fromRGB(255, 206, 150),
 			Material = Enum.Material.Neon,
-			Transparency = 0.52,
+			Transparency = 0.74,
 			CanCollide = false,
 			CastShadow = false,
 		})
@@ -277,11 +413,17 @@ function Build.lantern(pos: Vector3, withLight: boolean?)
 		CanCollide = false,
 		CastShadow = false,
 	})
-	local flame = Build.part({ -- chama pequena dentro da gaiola
-		Size = Vector3.new(0.7, 0.9, 0.7),
+	-- CHAMA. Era um CUBO de Neon opaco: com bloom em cima, virava um retângulo
+	-- amarelo chapado flutuando na rua — a leitura mais "Roblox" que existe numa
+	-- luz. Esfera + transparência lê como brilho; a luz de verdade quem faz é o
+	-- PointLight, não o tamanho do bloco aceso.
+	local flame = Build.part({
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.new(0.55, 0.55, 0.55),
 		CFrame = CFrame.new(cx),
 		Color = Build.C.FIRE,
 		Material = Enum.Material.Neon,
+		Transparency = 0.25,
 		CanCollide = false,
 		CastShadow = false,
 	})

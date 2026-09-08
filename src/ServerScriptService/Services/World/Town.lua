@@ -8,7 +8,10 @@
 -- no eixo Z) formando o "A", e a empena é escalonada. WedgePart com rotação dupla
 -- é imprevisível de orientação — foi o que quebrou a versão anterior.
 
+local Terrain = workspace.Terrain
+
 local Build = require(script.Parent.Build)
+local Market = require(script.Parent.Market)
 local C = Build.C
 
 local Town = {}
@@ -55,6 +58,19 @@ local function house(pos: Vector3, w: number, d: number, floors: number, ang: nu
 		Material = Enum.Material.Cobblestone,
 		CanCollide = false,
 	})
+
+	-- Neve acumulada no pé da parede. Sem isso parede e chão se encontram numa
+	-- linha reta e dura e a casa parece POUSADA sobre a neve em vez de estar
+	-- enterrada nela desde novembro.
+	for _, o in
+		{
+			Vector3.new(w / 2 + 0.7, 0, d * 0.22),
+			Vector3.new(-w / 2 - 0.7, 0, -d * 0.28),
+			Vector3.new(w * 0.12, 0, d / 2 + 0.7),
+		}
+	do
+		Build.drift((base * o) + Vector3.new(0, 0.35, 0), 1.5, 2.5)
+	end
 
 	-- cornija separando pedra e reboco (quebra a leitura de "bloco único")
 	if floors > 1 then
@@ -167,14 +183,34 @@ local function house(pos: Vector3, w: number, d: number, floors: number, ang: nu
 			Color = roofCol,
 			Material = roofTile and Enum.Material.Slate or Enum.Material.WoodPlanks,
 		})
-		-- Neve só numa faixa fina junto à cumeeira. Telhado todo branco fazia a
-		-- casa sumir contra o chão nevado — o telhado precisa CONTRASTAR.
-		if math.random() < 0.6 then
-			Build.snow(
-				rcf * CFrame.new(-s * slope * 0.30, 0.5, 0),
-				Vector3.new(slope * 0.34, 0.26, rd - 1.5)
-			)
+		-- FIADAS DE TELHA. Uma laje inclinada lisa é uma RAMPA, não um telhado.
+		-- O que faz o olho ler "telha" não é a cor: é a sombra fina que cada
+		-- fiada projeta na de baixo. Quatro fiadas sobrepostas, cada uma um
+		-- degrau acima da seguinte, e alternando um tom — de longe some a
+		-- escadinha e fica a textura.
+		local courses = 4
+		local cLen = slope / courses
+		for ci = 0, courses - 1 do
+			Build.part({
+				Size = Vector3.new(cLen * 1.05, 0.3, rd + 0.12),
+				CFrame = rcf * CFrame.new(
+					-s * (slope / 2) + s * cLen * (ci + 0.5),
+					0.42 + (courses - ci) * 0.055,
+					0
+				),
+				Color = roofCol:Lerp(Color3.fromRGB(20, 16, 14), 0.05 + (ci % 2) * 0.06),
+				Material = roofTile and Enum.Material.Slate or Enum.Material.WoodPlanks,
+				CanCollide = false,
+				CastShadow = false,
+			})
 		end
+
+		-- Neve junto à cumeeira, em faixas com linha de degelo IRREGULAR. Era uma
+		-- laje branca retangular só, e a aresta reta dela era o que fazia o
+		-- telhado ler como "retângulo branco colado em cima da casa".
+		-- O telhado ainda precisa CONTRASTAR: neve só na parte alta, nunca inteiro,
+		-- senão a casa some contra o chão nevado.
+		Build.roofSnow(rcf, slope, rd - 1.2, s)
 	end
 	-- cumeeira
 	Build.part({
@@ -369,31 +405,79 @@ local function house(pos: Vector3, w: number, d: number, floors: number, ang: nu
 end
 
 -- ================================================================= RUAS
+-- CHÃO BATIDO.
+-- Um FillBlock único deixa a rua com borda de régua, e um FillCylinder deixa a
+-- praça com uma circunferência perfeita de lama no meio da neve. Nos dois casos
+-- a FORMA denuncia o código antes de qualquer textura. Preenchendo em pedaços
+-- sobrepostos, com largura e giro sorteados, a borda sai irregular de graça —
+-- e o voxel de 4 studs já serrilha o resto.
+local function trodden(cf: CFrame, width: number, len: number)
+	-- NÚCLEO BATIDO. Onde passam cavalo, carroça e gente o dia inteiro a neve
+	-- simplesmente não fica. Pintado com ReplaceMaterial (não FillBlock: veja o
+	-- comentário em Build.paintGround) em quadrados sobrepostos com largura e
+	-- posição sorteadas, então a borda sai irregular sozinha.
+	local step = math.max(5, width * 0.42)
+	local n = math.max(1, math.ceil(len / step))
+	for i = 0, n - 1 do
+		local t = -len / 2 + step * (i + 0.5)
+		local p = (cf * CFrame.new((math.random() - 0.5) * width * 0.16, 0, t)).Position
+		Build.paintGround(p.X, p.Z, width * (0.54 + math.random() * 0.22))
+	end
+
+	-- NEVE REMANESCENTE, só na transição. O terreno já é neve fora do núcleo
+	-- pintado, então aqui basta uma faixa RAREFEITA de montinhos encostando na
+	-- borda: é o degradê entre "pisoteado" e "intocado" que desenha a estrada.
+	-- Antes eram três faixas densas dos dois lados e o resultado foi 2.377 peças
+	-- de neve no mapa, que lavaram a cena inteira de branco.
+	local sstep = 7
+	local m = math.max(1, math.floor(len / sstep))
+	for i = 0, m - 1 do
+		local t = -len / 2 + sstep * (i + 0.5)
+		for _, sx in { -1, 1 } do
+			if math.random() < 0.55 then
+				local w = 2.0 + math.random() * 2.4
+				local h = 0.3 + math.random() * 0.25
+				local at = (cf * CFrame.new(sx * (0.44 + math.random() * 0.22) * width, 0, t + (math.random() - 0.5) * 4)).Position
+				Build.part({
+					Size = Vector3.new(w, h, w * (0.6 + math.random() * 0.7)),
+					CFrame = CFrame.new(at.X, Build.groundY(at.X, at.Z, 2) + h * 0.2, at.Z)
+						* CFrame.Angles(0, math.random() * math.pi, 0),
+					Color = Color3.fromRGB(233, 238, 242),
+					Material = Enum.Material.Snow,
+					CanCollide = false,
+					CastShadow = false,
+				})
+			end
+		end
+	end
+end
+
+-- ESTRADA.
+-- Antes era uma laje de pedra de 0,5 stud pousada 0,55 acima do terreno. De
+-- perto o jogador via a aresta reta da laje FLUTUANDO sobre a neve, com a
+-- textura esticada — era o defeito que mais gritava "amador" na cidade inteira.
+--
+-- Agora a rua é TERRENO: trocamos a neve por chão batido na faixa da rua. Sem
+-- peça, sem aresta reta, e o voxel de 4 studs dá uma borda naturalmente
+-- irregular em vez de uma régua. A neve fica empilhada nas margens, onde
+-- ninguém pisa — que é exatamente como um caminho batido se lê na neve.
 local function road(from: Vector3, to: Vector3, width: number)
 	local d = to - from
 	local len = Vector3.new(d.X, 0, d.Z).Magnitude
-	Build.part({
-		Size = Vector3.new(width, 0.5, len),
-		CFrame = CFrame.lookAt(
-			Vector3.new((from.X + to.X) / 2, 0.3, (from.Z + to.Z) / 2),
-			Vector3.new(to.X, 0.3, to.Z)
-		),
-		Color = C.COBBLE,
-		Material = Enum.Material.Cobblestone,
-		CanCollide = false,
-	})
-	-- meio-fio
-	for _, s in { -1, 1 } do
-		Build.part({
-			Size = Vector3.new(0.8, 0.75, len),
-			CFrame = CFrame.lookAt(
-				Vector3.new((from.X + to.X) / 2, 0.38, (from.Z + to.Z) / 2),
-				Vector3.new(to.X, 0.38, to.Z)
-			) * CFrame.new(s * width / 2, 0, 0),
-			Color = C.STONE_LIGHT,
-			Material = Enum.Material.Cobblestone,
-			CanCollide = false,
-		})
+	local mid = Vector3.new((from.X + to.X) / 2, 0, (from.Z + to.Z) / 2)
+	local cf = CFrame.lookAt(mid, Vector3.new(to.X, 0, to.Z))
+
+	trodden(cf, width, len)
+
+	-- montes de neve irregulares nas duas margens
+	local n = math.max(3, math.floor(len / 13))
+	for i = 0, n do
+		for _, sx in { -1, 1 } do
+			if math.random() < 0.72 then
+				local t = (i / n - 0.5) * len
+				Build.drift((cf * CFrame.new(sx * (width / 2 + 0.5), 0.35, t)).Position, 1.7, 3.2)
+			end
+		end
 	end
 end
 
@@ -408,19 +492,55 @@ local function streetArch(z: number)
 			Material = Enum.Material.Cobblestone,
 		})
 	end
-	for i = 0, 8 do
-		local a = (i / 8) * math.pi
+	-- ARCO. Estava quebrado: 9 aduelas de 3,4 studs distribuídas por ângulo
+	-- constante numa elipse achatada. Perto do topo o passo chega a 6,5 studs,
+	-- então sobrava um VÃO de 3,1 entre pedra e pedra e o arco lia como blocos
+	-- soltos flutuando no céu. E eram cubos alinhados ao eixo, sem acompanhar a
+	-- curva — pedra de arco é cunha, sempre apontada pro centro.
+	local RISE = 9
+	local N = 24
+	for i = 0, N do
+		local a = (i / N) * math.pi
+		local x = math.cos(a) * W
+		local y = 20 + math.sin(a) * RISE
+		-- tangente da elipse: gira cada aduela pra acompanhar a curva
+		local ang = math.atan2(math.cos(a) * RISE, -math.sin(a) * W)
 		Build.part({
-			Size = Vector3.new(3.4, 3.4, 8),
-			CFrame = CFrame.new(math.cos(a) * W, 20 + math.sin(a) * 7, z),
-			Color = C.STONE_LIGHT,
+			Size = Vector3.new(4.4, 3.2, 8), -- 4,4 > passo máximo: sempre encostam
+			CFrame = CFrame.new(x, y, z) * CFrame.Angles(0, 0, ang),
+			Color = Build.tint(C.STONE_LIGHT, 0.045),
 			Material = Enum.Material.Cobblestone,
 			CastShadow = false,
 		})
 	end
+	-- fecho (pedra do meio, maior): é o que faz o olho ler "arco" e não "curva"
+	Build.part({
+		Size = Vector3.new(4.6, 5.2, 8.6),
+		CFrame = CFrame.new(0, 20 + RISE + 0.6, z),
+		Color = C.STONE,
+		Material = Enum.Material.Cobblestone,
+	})
 	for _, s in { -1, 1 } do
 		Build.banner(CFrame.new(s * (W - 3), 13, z - 4.2), 11, s > 0 and C.BANNER or C.BANNER_2)
 	end
+	-- CABO das bandeirolas, com barriga. Sem ele os losangos ficam flutuando
+	-- soltos no ar — que era exatamente como estavam.
+	for seg = -4, 3 do
+		local x0, x1 = seg * 4, (seg + 1) * 4
+		local y0 = 18.2 - math.abs(seg) * 0.34
+		local y1 = 18.2 - math.abs(seg + 1) * 0.34
+		local mid = Vector3.new((x0 + x1) / 2, (y0 + y1) / 2, z + 6)
+		local len = math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2) + 0.2
+		Build.part({
+			Size = Vector3.new(len, 0.14, 0.14),
+			CFrame = CFrame.new(mid) * CFrame.Angles(0, 0, math.atan2(y1 - y0, x1 - x0)),
+			Color = C.TIMBER,
+			Material = Enum.Material.Fabric,
+			CanCollide = false,
+			CastShadow = false,
+		})
+	end
+
 	-- bandeirolas atravessando a rua
 	for i = -4, 4 do
 		Build.part({
@@ -460,7 +580,12 @@ end
 -- a casa cabe aqui? (dentro da muralha, fora do mercado e fora da via principal)
 local INNER_LIMIT = 158 -- muralha fica em 185; deixa recuo pra passarela e becos
 local MARKET_C = Vector3.new(0, 0, -80)
-local MARKET_R = 38
+-- Raio da PRAÇA em si. Cresceu de 38 pra 52 porque agora ela é o hub social:
+-- seis barracas grandes num anel, braseiros, monumento e o banco fora do anel.
+local MARKET_R = 52
+-- Raio de EXCLUSÃO de casas. Maior que a praça porque o banco fica fora do anel
+-- (raio + 16) e ainda tem 13 de meia-profundidade.
+local MARKET_KEEPOUT = 84
 
 local function canPlace(x: number, z: number, w: number, d: number): boolean
 	local reach = math.max(w, d) / 2 + 3
@@ -468,7 +593,7 @@ local function canPlace(x: number, z: number, w: number, d: number): boolean
 		return false -- atravessaria a muralha
 	end
 	local dx, dz = x - MARKET_C.X, z - MARKET_C.Z
-	if math.sqrt(dx * dx + dz * dz) < MARKET_R + reach then
+	if math.sqrt(dx * dx + dz * dz) < MARKET_KEEPOUT + reach then
 		return false -- invadiria a praça do mercado
 	end
 	if math.abs(x) < Town.MAIN_ROAD_W / 2 + reach then
@@ -502,78 +627,6 @@ local function houseRow(z: number, xFrom: number, xTo: number, facing: number, t
 end
 
 -- ================================================================= MERCADO
-local function buildMarket()
-	local c = Vector3.new(0, 0, -80)
-	Build.part({
-		Shape = Enum.PartType.Cylinder,
-		Size = Vector3.new(0.6, 66, 66),
-		CFrame = CFrame.new(c + Vector3.new(0, 0.35, 0)) * CFrame.Angles(0, 0, math.rad(90)),
-		Color = C.COBBLE,
-		Material = Enum.Material.Cobblestone,
-		CanCollide = false,
-	})
-	-- poço com telhadinho
-	for i = 1, 14 do
-		local a = (i / 14) * math.pi * 2
-		Build.part({
-			Size = Vector3.new(1.5, 2.6, 1.5),
-			CFrame = CFrame.new(c + Vector3.new(math.cos(a) * 3.6, 1.3, math.sin(a) * 3.6))
-				* CFrame.Angles(0, a, 0),
-			Color = C.STONE,
-			Material = Enum.Material.Cobblestone,
-		})
-	end
-	for _, sx in { -3.8, 3.8 } do
-		Build.post(c + Vector3.new(sx, 2.6, 0), 5.5, 0.5, C.TIMBER, Enum.Material.Wood)
-	end
-	for _, s in { -1, 1 } do
-		Build.part({
-			Size = Vector3.new(9.5, 0.5, 5),
-			CFrame = CFrame.new(c + Vector3.new(0, 8.4, s * 1.2))
-				* CFrame.Angles(math.rad(s * 32), 0, 0),
-			Color = C.ROOF_SHINGLE,
-			Material = Enum.Material.WoodPlanks,
-			CastShadow = false,
-		})
-	end
-
-	-- barracas
-	for i = 1, 7 do
-		local a = (i / 7) * math.pi * 2 + 0.35
-		local p = c + Vector3.new(math.cos(a) * 24, 0, math.sin(a) * 24)
-		local rot = -a
-		for _, off in
-			{ Vector3.new(-3.4, 0, -2.4), Vector3.new(3.4, 0, -2.4), Vector3.new(-3.4, 0, 2.4), Vector3.new(3.4, 0, 2.4) }
-		do
-			local r = CFrame.new(p) * CFrame.Angles(0, rot, 0) * CFrame.new(off)
-			Build.post(r.Position, 5.5, 0.4, C.TIMBER, Enum.Material.Wood)
-		end
-		-- toldo em duas águas
-		for _, s in { -1, 1 } do
-			Build.part({
-				Size = Vector3.new(8.5, 0.35, 4),
-				CFrame = CFrame.new(p + Vector3.new(0, 6.2, 0))
-					* CFrame.Angles(0, rot, 0)
-					* CFrame.new(0, 0, s * 1.9)
-					* CFrame.Angles(math.rad(s * 26), 0, 0),
-				Color = (i % 2 == 0) and C.BANNER or C.BANNER_2,
-				Material = Enum.Material.Fabric,
-				CastShadow = false,
-			})
-		end
-		-- balcão + mercadoria
-		Build.part({
-			Size = Vector3.new(7.5, 0.4, 2.2),
-			CFrame = CFrame.new(p + Vector3.new(0, 3.2, 0)) * CFrame.Angles(0, rot, 0),
-			Color = C.WOOD,
-			Material = Enum.Material.WoodPlanks,
-		})
-		Build.crate(p + Vector3.new(2, 0, 1.4), 1.9)
-		Build.barrel(p + Vector3.new(-2.2, 0, 1.6))
-	end
-end
-
--- ================================================================= SALÃO
 local function buildKeep()
 	local c = Vector3.new(0, 0, Town.KEEP_Z)
 
@@ -804,7 +857,7 @@ end
 function Town.build()
 	buildStreets()
 	buildDistricts()
-	buildMarket()
+	Market.build(MARKET_C, MARKET_R)
 	buildKeep()
 end
 

@@ -21,7 +21,9 @@ function Terra.build()
 	Terrain:Clear()
 	Terrain:SetMaterialColor(Enum.Material.Snow, Color3.fromRGB(226, 232, 236))
 	Terrain:SetMaterialColor(Enum.Material.Rock, Color3.fromRGB(92, 92, 92))
-	Terrain:SetMaterialColor(Enum.Material.Ground, Color3.fromRGB(96, 88, 72))
+	-- Chão batido CINZENTO, não marrom quente: no meio de um mapa nevado um
+	-- marrom saturado lê como lama de outono e briga com a paleta fria.
+	Terrain:SetMaterialColor(Enum.Material.Ground, Color3.fromRGB(94, 90, 83))
 
 	-- planície nevada (topo em y = 0)
 	fillBlock(0, GROUND_TOP - 20, 0, PLAIN, 40, PLAIN, Enum.Material.Snow)

@@ -167,11 +167,15 @@ local function tower(pos: Vector3, k: Cfg, tall: number)
 	end
 
 	-- braseiro: o pontinho quente que dá escala e leitura noturna à silhueta
+	-- esfera, não cubo: de longe um cubo de Neon vira um quadrado amarelo colado
+	-- no céu; a esfera lê como fogo mesmo a 300 studs
 	local fire = Build.part({
-		Size = Vector3.new(2, 2, 2),
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.new(2.4, 2.4, 2.4),
 		CFrame = CFrame.new(pos + Vector3.new(0, h + PARAPET_H + layers * 1.9 + 1, 0)),
 		Color = C.FIRE,
 		Material = Enum.Material.Neon,
+		Transparency = 0.2,
 		CanCollide = false,
 		CastShadow = false,
 	})
