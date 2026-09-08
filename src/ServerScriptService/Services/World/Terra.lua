@@ -63,6 +63,49 @@ function Terra.build()
 	ridge(20, 380, 70, 55, 55) -- serra próxima: dá profundidade
 	ridge(26, 600, 90, 110, 90) -- parede de horizonte: esconde a borda do mundo
 
+	-- RELEVO DA PLANÍCIE.
+	-- Uma planície perfeitamente plana é o que faz a cidade ler como maquete
+	-- apoiada numa mesa: sem nada entre o jogador e a serra, o olho não tem como
+	-- medir distância. Afloramentos de rocha e ondulações rasas dão escala,
+	-- silhueta de meia distância e cobertura pro combate — e custam terreno
+	-- voxel, não peças.
+	local TOWN_CLEAR = 250 -- raio livre em volta da muralha
+	local ROAD_HALF = 34 -- corredor da estrada que sai do portão
+
+	local function blocked(x: number, z: number): boolean
+		if math.sqrt(x * x + z * z) < TOWN_CLEAR then
+			return true
+		end
+		if math.abs(x) < ROAD_HALF and z < 0 then
+			return true -- não fecha a saída do portão
+		end
+		if x > SEA_FROM - 70 then
+			return true -- não joga pedra dentro do fiorde
+		end
+		return false
+	end
+
+	-- afloramentos: rocha exposta com neve acumulada em cima
+	for _ = 1, 70 do
+		local x = (math.random() - 0.5) * PLAIN * 0.86
+		local z = (math.random() - 0.5) * PLAIN * 0.86
+		if not blocked(x, z) then
+			local r = 9 + math.random() * 20
+			Terrain:FillBall(Vector3.new(x, GROUND_TOP - r * 0.55, z), r, Enum.Material.Rock)
+			Terrain:FillBall(Vector3.new(x, GROUND_TOP - r * 0.15, z), r * 0.62, Enum.Material.Snow)
+		end
+	end
+
+	-- ondulações largas e RASAS: o olho lê como terreno, não como obstáculo
+	for _ = 1, 90 do
+		local x = (math.random() - 0.5) * PLAIN * 0.9
+		local z = (math.random() - 0.5) * PLAIN * 0.9
+		if not blocked(x, z) then
+			local r = 26 + math.random() * 46
+			Terrain:FillBall(Vector3.new(x, GROUND_TOP - r * 0.88, z), r, Enum.Material.Snow)
+		end
+	end
+
 	-- (a elevação da cidade é feita com peças, na plataforma do Salão do Jarl:
 	-- terreno voxel embaixo das construções causaria interseção)
 end

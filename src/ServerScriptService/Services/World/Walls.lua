@@ -1,8 +1,21 @@
 --!strict
 -- Walls.lua  (SERVIDOR)
--- A muralha que cerca a cidade. É o elemento de silhueta mais forte do mapa
--- (ref. Attack on Titan e Whiterun): alta, contínua, com ameias, torres
--- regulares e um portão monumental ao sul por onde o jogador sai pra caçar.
+-- A muralha que cerca a cidade: o elemento de silhueta mais forte do mapa
+-- (ref. Attack on Titan e Whiterun). Alta, irregular, com ameias de verdade,
+-- torres redondas e um portão monumental por onde o jogador sai pra caçar.
+--
+-- POR QUE A VERSÃO ANTERIOR LIA COMO LAJE (os dois bugs que importavam):
+--
+--  1. As ameias tinham 6,5 studs de comprimento espaçadas a cada 5. Cada merlão
+--     invadia o vizinho, então em vez de merlão-vão-merlão o resultado era uma
+--     FAIXA SÓLIDA. O jogo nunca teve crenelagem: tinha um friso contínuo.
+--  2. O plano era um círculo perfeito. A "irregularidade" mexia ±1,7 na altura
+--     e ±0,8° na inclinação de uma parede de 54 studs — invisível — e nunca
+--     tocava no raio. Círculo perfeito é assinatura de "gerado por loop".
+--
+-- Agora o traçado é um polígono fechado irregular (harmônicos inteiros da volta,
+-- portanto periódico e sem emenda) e o perfil tem quatro leituras: talude,
+-- corpo, friso e parapeito recortado.
 
 local Build = require(script.Parent.Build)
 local Town = require(script.Parent.Town)
@@ -11,89 +24,191 @@ local C = Build.C
 local Walls = {}
 
 Walls.RADIUS = 185
--- 34 studs lia como um muro baixo de vista aérea. A referência (AoT / Whiterun)
--- é uma parede que DOMINA a cidade — 54 muda completamente a silhueta.
 Walls.HEIGHT = 54
 
-local SEGMENTS = 64
+export type Config = {
+	radius: number?,
+	height: number?,
+	segments: number?,
+	gateT: number?, -- posição do portão no traçado, 0..1 (0.75 = sul)
+	seed: number?, -- muda o formato da muralha sem mudar o código
+	roughness: number?, -- 0 = círculo perfeito; 1 = bem recortada
+}
 
--- ameias (crenelagem) no topo de um trecho
-local function crenellation(cf: CFrame, length: number)
-	local n = math.floor(length / 5)
+type Cfg = {
+	radius: number,
+	height: number,
+	segments: number,
+	gateT: number,
+	seed: number,
+	roughness: number,
+}
+
+-- ---------------- PERFIL ----------------
+-- Uma muralha real não é uma laje vertical. Tem embasamento mais largo (talude,
+-- que a faz parecer plantada no chão em vez de apoiada nele), corpo, friso
+-- saliente marcando o nível da passarela, e parapeito com ameias. São quatro
+-- leituras de perto e uma silhueta recortada de longe.
+local BATTER_H = 13 -- altura do talude
+local BATTER_OUT = 3.2 -- quanto o talude avança além do corpo
+local BODY_T = 9 -- espessura do corpo
+local CORNICE_OUT = 1.5 -- saliência do friso
+local CORNICE_H = 1.8
+local PARAPET_H = 7
+local MERLON_W = 3.4 -- largura do merlão (o dente)
+local MERLON_GAP = 2.9 -- vão entre merlões: ISTO é a ameia
+local WALK_W = 6 -- passarela interna
+
+local function cfg(c: Config?): Cfg
+	local t = c or {}
+	return {
+		radius = t.radius or Walls.RADIUS,
+		height = t.height or Walls.HEIGHT,
+		segments = t.segments or 72,
+		gateT = t.gateT or 0.75,
+		seed = t.seed or 1,
+		roughness = t.roughness or 1,
+	}
+end
+
+-- Traçado irregular mas FECHADO: só harmônicos inteiros da volta completa, então
+-- o fim encontra o começo exatamente. Sem isso a muralha abriria uma fresta.
+local function radiusAt(t: number, k: Cfg): number
+	local a = t * math.pi * 2
+	local s = k.seed * 1.7
+	local wobble = math.sin(a * 3 + s) * 9.0
+		+ math.sin(a * 5 + s * 2.3) * 5.0
+		+ math.sin(a * 8 + s * 3.1) * 2.5
+	return k.radius + wobble * k.roughness
+end
+
+local function pointAt(t: number, k: Cfg): Vector3
+	local a = t * math.pi * 2
+	local r = radiusAt(t, k)
+	return Vector3.new(math.cos(a) * r, 0, math.sin(a) * r)
+end
+
+-- A altura também ondula: muralha erguida ao longo de séculos não tem uma linha
+-- de topo perfeitamente reta.
+local function heightAt(t: number, k: Cfg): number
+	local a = t * math.pi * 2
+	local wobble = math.sin(a * 4 + k.seed) * 3.2 + math.sin(a * 7 + k.seed * 2) * 1.8
+	return k.height + wobble * k.roughness
+end
+
+-- distância angular curta entre dois t (ambos em 0..1)
+local function tDist(a: number, b: number): number
+	local d = math.abs(a - b) % 1
+	return math.min(d, 1 - d)
+end
+
+-- ---------------- CRENELAGEM ----------------
+-- Merlão de 3,4 com vão de 2,9: passo 6,3. O VÃO é o que faz o olho ler
+-- "fortificação". Antes o passo era menor que o merlão e tudo virava parede.
+local function crenellate(cf: CFrame, length: number, top: number)
+	local step = MERLON_W + MERLON_GAP
+	local n = math.max(1, math.floor(length / step))
+	local used = n * step
+	local start = -used / 2 + step / 2
 	for i = 0, n - 1 do
-		local off = -length / 2 + 2.5 + i * 5
-        Build.part({
-			Size = Vector3.new(3, 3.2, 6.5),
-			CFrame = cf * CFrame.new(0, 0, off),
-			Color = C.STONE_LIGHT,
+		Build.part({
+			Size = Vector3.new(BODY_T + CORNICE_OUT * 2, PARAPET_H, MERLON_W),
+			CFrame = cf * CFrame.new(0, top + PARAPET_H / 2, start + i * step),
+			Color = Build.tint(C.STONE_LIGHT, 0.045),
 			Material = Enum.Material.Cobblestone,
 			CastShadow = false,
 		})
 	end
 end
 
-local function tower(pos: Vector3, ang: number)
-	local h = Walls.HEIGHT + 14
-	Build.part({
-		Size = Vector3.new(18, h, 18),
-		CFrame = CFrame.new(pos + Vector3.new(0, h / 2, 0)) * CFrame.Angles(0, ang, 0),
-		Color = C.STONE,
-		Material = Enum.Material.Cobblestone,
-	})
-	-- ameias da torre
-	for i = 0, 7 do
-		local a = (i / 8) * math.pi * 2
+-- ---------------- TORRE ----------------
+-- Redonda, não cúbica. Uma torre quadrada de 18x18 com telhado de caixas
+-- empilhadas era a coisa mais "Roblox" que existia neste mapa.
+local function tower(pos: Vector3, k: Cfg, tall: number)
+	local h = k.height + tall
+	local d = 21
+
+	-- Fuste. Cilindro pega a luz do sol em mais ângulos que uma face plana, então
+	-- com a MESMA cor do corpo da muralha a torre lia como arenito claro ao lado
+	-- de granito. Escurecer um degrau faz as duas voltarem a ser a mesma pedra.
+	Build.post(pos, h, d, Build.tint(C.STONE_DARK, 0.05), Enum.Material.Cobblestone)
+	-- talude da base: a torre nasce do chão, não pousa nele
+	Build.post(pos, BATTER_H, d + 4.5, C.STONE_DARK, Enum.Material.Cobblestone)
+	-- mísula: anel saliente sob o parapeito. Detalhe barato que lê como pedra
+	-- trabalhada e quebra o cilindro liso.
+	Build.post(pos + Vector3.new(0, h - 5, 0), 2.6, d + 3.2, C.STONE, Enum.Material.Cobblestone)
+
+	-- ameias em volta do topo
+	local ring = 10
+	for i = 0, ring - 1 do
+		local a = (i / ring) * math.pi * 2
 		Build.part({
-			Size = Vector3.new(3.4, 3.4, 3.4),
-			CFrame = CFrame.new(pos + Vector3.new(math.cos(a) * 7.6, h + 1.7, math.sin(a) * 7.6)),
+			Size = Vector3.new(3.2, PARAPET_H, 3.2),
+			CFrame = CFrame.new(
+				pos + Vector3.new(math.cos(a) * (d / 2 + 0.6), h + PARAPET_H / 2 - 1, math.sin(a) * (d / 2 + 0.6))
+			) * CFrame.Angles(0, -a, 0),
 			Color = C.STONE_LIGHT,
 			Material = Enum.Material.Cobblestone,
 			CastShadow = false,
 		})
 	end
-	-- telhado cônico estilizado (camadas)
-	for i = 0, 3 do
-		local s = 16 - i * 3.6
-		Build.part({
-			Size = Vector3.new(s, 3, s),
-			CFrame = CFrame.new(pos + Vector3.new(0, h + 4.5 + i * 2.8, 0)) * CFrame.Angles(0, ang, 0),
-			Color = C.ROOF_SHINGLE,
-			Material = Enum.Material.WoodPlanks,
-			CastShadow = false,
-		})
+
+	-- telhado cônico: cilindros decrescentes. Passo pequeno = cone, não escada.
+	local layers = 9
+	for i = 0, layers - 1 do
+		local f = i / layers
+		Build.post(
+			pos + Vector3.new(0, h + PARAPET_H - 1 + i * 1.9, 0),
+			2.0,
+			(d - 1) * (1 - f * 0.92),
+			Build.tint(C.ROOF_SHINGLE, 0.03),
+			Enum.Material.Wood
+		)
 	end
-	-- braseiro no topo: pontinho quente na silhueta
+
+	-- braseiro: o pontinho quente que dá escala e leitura noturna à silhueta
 	local fire = Build.part({
 		Size = Vector3.new(2, 2, 2),
-		CFrame = CFrame.new(pos + Vector3.new(0, h + 18, 0)),
+		CFrame = CFrame.new(pos + Vector3.new(0, h + PARAPET_H + layers * 1.9 + 1, 0)),
 		Color = C.FIRE,
 		Material = Enum.Material.Neon,
 		CanCollide = false,
 		CastShadow = false,
 	})
-	Build.light(fire, C.FIRE, 2, 40)
+	Build.light(fire, C.FIRE, 2, 42)
 end
 
--- portão monumental ao sul: duas torres, arco e portas de madeira
-local function gatehouse()
+-- ---------------- PORTARIA ----------------
+local function gatehouse(k: Cfg)
 	local z = Town.GATE_Z - 25
-	local h = Walls.HEIGHT
+	local h = k.height
+	local step = MERLON_W + MERLON_GAP
 
 	for _, sx in { -1, 1 } do
-		Build.part({ -- torres do portão (mais grossas)
+		Build.part({
 			Size = Vector3.new(22, h + 20, 24),
 			CFrame = CFrame.new(sx * 24, (h + 20) / 2, z),
 			Color = C.STONE,
 			Material = Enum.Material.Cobblestone,
 		})
-		for i = 0, 5 do -- ameias
-			Build.part({
-				Size = Vector3.new(3.4, 3.4, 3.4),
-				CFrame = CFrame.new(sx * 24 + (i - 2.5) * 5, h + 21.7, z + 10),
-				Color = C.STONE_LIGHT,
-				Material = Enum.Material.Cobblestone,
-				CastShadow = false,
-			})
+		-- talude nas torres do portão
+		Build.part({
+			Size = Vector3.new(22 + BATTER_OUT * 2, BATTER_H, 24 + BATTER_OUT * 2),
+			CFrame = CFrame.new(sx * 24, BATTER_H / 2, z),
+			Color = C.STONE_DARK,
+			Material = Enum.Material.Cobblestone,
+		})
+		-- ameias reais no topo das torres do portão
+		for i = 0, 3 do
+			for _, sz in { -1, 1 } do
+				Build.part({
+					Size = Vector3.new(MERLON_W, PARAPET_H, 3.4),
+					CFrame = CFrame.new(sx * 24 + (i - 1.5) * step, h + 20 + PARAPET_H / 2, z + sz * 10.5),
+					Color = C.STONE_LIGHT,
+					Material = Enum.Material.Cobblestone,
+					CastShadow = false,
+				})
+			end
 		end
 		Build.banner(CFrame.new(sx * 24, h * 0.62, z - 12.2), 16, C.BANNER)
 	end
@@ -105,9 +220,20 @@ local function gatehouse()
 		Color = C.STONE,
 		Material = Enum.Material.Cobblestone,
 	})
-	-- arco (degraus de pedra formando a curva)
-	for i = 0, 6 do
-		local a = (i / 6) * math.pi
+	for i = 0, 3 do
+		for _, sz in { -1, 1 } do
+			Build.part({
+				Size = Vector3.new(MERLON_W, PARAPET_H, 3.4),
+				CFrame = CFrame.new((i - 1.5) * step, h + 20 + PARAPET_H / 2, z + sz * 10.5),
+				Color = C.STONE_LIGHT,
+				Material = Enum.Material.Cobblestone,
+				CastShadow = false,
+			})
+		end
+	end
+	-- arco
+	for i = 0, 8 do
+		local a = (i / 8) * math.pi
 		Build.part({
 			Size = Vector3.new(3, 3, 24),
 			CFrame = CFrame.new(math.cos(a) * 13, h + 4 + math.sin(a) * 9, z),
@@ -135,46 +261,63 @@ local function gatehouse()
 	})
 end
 
-function Walls.build()
-	local R = Walls.RADIUS
-	local H = Walls.HEIGHT
-	-- comprimento do arco entre segmentos + folga, pra eles se sobreporem e a
-	-- muralha ler como parede contínua (com o giro certo: veja CFrame.Angles(0,-ang,0))
-	local segLen = (2 * math.pi * R) / SEGMENTS + 3
+function Walls.build(config: Config?)
+	local k = cfg(config)
+	local N = k.segments
+	local gateArc = 0.055 -- fração da volta ocupada pelo portão
 
-	for i = 1, SEGMENTS do
-		local ang = (i / SEGMENTS) * math.pi * 2
-		local x, z = math.cos(ang) * R, math.sin(ang) * R
-		-- abertura do portão ao sul (onde fica o gatehouse)
-		local isGate = math.abs(x) < 40 and z < -R * 0.8
-		if not isGate then
-			-- IRREGULARIDADE: altura, espessura e inclinação variam um pouco por
-			-- segmento. Muralha com todos os blocos idênticos e perfeitamente
-			-- alinhados grita "gerado por código".
-			local hVar = H + (math.random() - 0.5) * 3.5
-			local tilt = math.rad((math.random() - 0.5) * 1.6)
-			local cf = CFrame.new(x, hVar / 2, z)
-				* CFrame.Angles(0, -ang, 0)
-				* CFrame.Angles(tilt, 0, 0)
+	for i = 0, N - 1 do
+		local t0, t1 = i / N, (i + 1) / N
+		local tMid = (t0 + t1) / 2
+		if tDist(tMid, k.gateT) > gateArc then
+			local p0, p1 = pointAt(t0, k), pointAt(t1, k)
+			local dir = p1 - p0
+			local len = dir.Magnitude + 1.2 -- sobreposição: sem fresta entre trechos
+			local mid = (p0 + p1) / 2
+			local h = heightAt(tMid, k)
+			-- o eixo Z da peça acompanha o trecho; "outward" aponta pra fora
+			local flat = CFrame.lookAt(mid, mid + dir.Unit)
+			local outward = mid.Unit
+
+			-- corpo
 			Build.part({
-				Size = Vector3.new(9 + (math.random() - 0.5) * 1.2, hVar, segLen),
-				CFrame = cf,
+				Size = Vector3.new(BODY_T, h, len),
+				CFrame = flat * CFrame.new(0, h / 2, 0),
 				Color = Build.tint((i % 3 == 0) and C.STONE_DARK or C.STONE, 0.05),
 				Material = Enum.Material.Cobblestone,
 			})
-			-- faixa de sujeira na base da muralha
+			-- talude: mais largo e escuro, planta a muralha no chão
 			Build.part({
-				Size = Vector3.new(9.4, 7, segLen),
-				CFrame = CFrame.new(x, 3.5, z) * CFrame.Angles(0, -ang, 0),
-				Color = Color3.fromRGB(70, 68, 62),
+				Size = Vector3.new(BODY_T + BATTER_OUT * 2, BATTER_H, len),
+				CFrame = flat * CFrame.new(0, BATTER_H / 2, 0),
+				Color = Build.tint(C.STONE_DARK, 0.04),
 				Material = Enum.Material.Cobblestone,
-				CanCollide = false,
 			})
-			crenellation(CFrame.new(x, hVar + 1.6, z) * CFrame.Angles(0, -ang, 0), segLen)
-			-- passarela interna no topo (acompanha a altura variável do segmento)
+			-- friso saliente marcando o nível da passarela
 			Build.part({
-				Size = Vector3.new(5, 1, segLen),
-				CFrame = cf * CFrame.new(6, hVar / 2 - 0.5, 0),
+				Size = Vector3.new(BODY_T + CORNICE_OUT * 2, CORNICE_H, len),
+				CFrame = flat * CFrame.new(0, h - 0.7, 0),
+				Color = C.STONE_LIGHT,
+				Material = Enum.Material.Cobblestone,
+				CastShadow = false,
+			})
+			-- parapeito recortado
+			crenellate(flat, len, h)
+			-- Neve acumulada no pé, do lado de fora. Sem isso a muralha encosta na
+			-- planície numa linha reta e dura, e as duas parecem coisas separadas
+			-- empilhadas — não construção assentada num terreno.
+			Build.part({
+				Size = Vector3.new(BODY_T + BATTER_OUT * 2 + 5, 3.4, len),
+				CFrame = (flat * CFrame.new(0, 1.1, 0)) + outward * 2.2,
+				Color = Color3.fromRGB(236, 240, 243),
+				Material = Enum.Material.Snow,
+				CanCollide = false,
+				CastShadow = false,
+			})
+			-- passarela interna, encostada na face de dentro
+			Build.part({
+				Size = Vector3.new(WALK_W, 1, len),
+				CFrame = flat * CFrame.new(0, h - 0.5, 0) - outward * (BODY_T / 2 + WALK_W / 2 - 0.5),
 				Color = C.STONE_LIGHT,
 				Material = Enum.Material.Cobblestone,
 				CastShadow = false,
@@ -182,16 +325,18 @@ function Walls.build()
 		end
 	end
 
-	-- torres a cada 8 segmentos
-	for i = 1, SEGMENTS, 8 do
-		local ang = (i / SEGMENTS) * math.pi * 2
-		local x, z = math.cos(ang) * R, math.sin(ang) * R
-		if not (math.abs(x) < 60 and z < -R * 0.75) then
-			tower(Vector3.new(x, 0, z), -ang)
+	-- Torres em intervalos IRREGULARES e alturas diferentes. Espaçamento perfeito
+	-- denuncia tanto quanto o círculo perfeito: ninguém constrói assim ao longo
+	-- de séculos, cada torre responde a uma ameaça de uma época.
+	local spots = { 0.02, 0.14, 0.235, 0.35, 0.46, 0.56, 0.655, 0.895, 0.965 }
+	local talls = { 16, 22, 12, 26, 14, 20, 11, 24, 15 }
+	for i, t in spots do
+		if tDist(t, k.gateT) > gateArc + 0.03 then
+			tower(pointAt(t, k), k, talls[i])
 		end
 	end
 
-	gatehouse()
+	gatehouse(k)
 end
 
 return Walls
