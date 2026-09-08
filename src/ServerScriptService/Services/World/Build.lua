@@ -162,9 +162,22 @@ groundParams.FilterType = Enum.RaycastFilterType.Include
 groundParams.FilterDescendantsInstances = { workspace.Terrain }
 groundParams.IgnoreWater = true
 
+local function groundHit(x: number, z: number): RaycastResult?
+	return workspace:Raycast(Vector3.new(x, 220, z), Vector3.new(0, -400, 0), groundParams)
+end
+
 function Build.groundY(x: number, z: number, fallback: number?): number
-	local hit = workspace:Raycast(Vector3.new(x, 220, z), Vector3.new(0, -400, 0), groundParams)
+	local hit = groundHit(x, z)
 	return hit and hit.Position.Y or (fallback or 0)
+end
+
+-- O chão neste ponto ainda é neve intocada?
+-- Esta é a regra que faltava: neve só acumula ONDE JÁ HÁ NEVE. Onde o chão foi
+-- batido — rua, praça, volta do braseiro — não pode nascer monte, senão a terra
+-- fica ondulada e a estrada perde justamente a leitura de "aqui passa gente".
+function Build.isSnowAt(x: number, z: number): boolean
+	local hit = groundHit(x, z)
+	return hit ~= nil and hit.Material == Enum.Material.Snow
 end
 
 -- PINTAR O CHÃO (tirar a neve de onde passa gente).
@@ -178,13 +191,39 @@ end
 --
 -- ReplaceMaterial troca só o MATERIAL dentro da região e preserva a ocupação,
 -- que é exatamente o que "aqui a neve não fica porque passa cavalo" precisa.
+-- Nível do chão da planície. Terra.lua preenche a neve com o topo em 0, e a
+-- isosuperfície do voxel renderiza isso em y≈2. Tudo que "normaliza o chão"
+-- tem que mirar exatamente neste valor, senão vira degrau.
+local GROUND_TOP = 0
+
 function Build.paintGround(cx: number, cz: number, size: number, material: Enum.Material?)
 	local half = size / 2
+	local mat = material or Enum.Material.Ground
+
+	-- 1) NIVELA. Isto é o que faltava: trocar só o material deixava o morro de
+	--    neve que já estava ali, agora vestido de terra — e o calçamento plano
+	--    ficava espetado no morro. Onde não há neve, o chão volta ao nível.
+	--    Limpa tudo acima do nível...
+	workspace.Terrain:FillBlock(
+		CFrame.new(cx, GROUND_TOP + 24, cz),
+		Vector3.new(size, 48, size),
+		Enum.Material.Air
+	)
+	--    ...e preenche sólido até ele.
+	workspace.Terrain:FillBlock(
+		CFrame.new(cx, GROUND_TOP - 9, cz),
+		Vector3.new(size, 18, size),
+		mat
+	)
+
+	-- 2) PINTA o que sobrou de neve nas bordas do bloco (o FillBlock é quadrado
+	--    e duro; ReplaceMaterial num raio um pouco maior suaviza a transição
+	--    sem mexer em altura).
 	local region = Region3.new(
-		Vector3.new(cx - half, -10, cz - half),
-		Vector3.new(cx + half, 12, cz + half)
+		Vector3.new(cx - half - 3, -10, cz - half - 3),
+		Vector3.new(cx + half + 3, 12, cz + half + 3)
 	):ExpandToGrid(4)
-	workspace.Terrain:ReplaceMaterial(region, 4, Enum.Material.Snow, material or Enum.Material.Ground)
+	workspace.Terrain:ReplaceMaterial(region, 4, Enum.Material.Snow, mat)
 end
 
 -- NEVE DE TELHADO.
@@ -234,26 +273,36 @@ function Build.roofSnow(rcf: CFrame, slopeLen: number, depth: number, dir: numbe
 	end
 end
 
--- MONTE DE NEVE encostado numa construção ou numa quina.
--- Sem isto, parede e chão se encontram numa linha reta e dura e as duas parecem
--- objetos empilhados. Neve acumulada no pé é o que amarra construção e terreno.
+-- MONTE DE NEVE.
+--
+-- Isto era feito com PEÇAS e o resultado eram caixas brancas retangulares
+-- espalhadas pelo chão como isopor — de longe a pior coisa do mapa. Neve não
+-- tem aresta viva, e nenhuma quantidade de sorteio de tamanho conserta um
+-- retângulo.
+--
+-- O motor já resolve isso: o terreno voxel suaviza a superfície e FUNDE volumes
+-- vizinhos automaticamente, então bolas de neve sobrepostas viram um banco
+-- contínuo e macio, com a textura de neve de verdade e sombreamento próprio.
+-- Banco de neve é TERRENO, não Part. De quebra some com ~1.700 peças do mapa.
 function Build.drift(pos: Vector3, spread: number, size: number)
 	for _ = 1, 3 do
 		local a = math.random() * math.pi * 2
 		local r = math.random() * spread
 		local x, z = pos.X + math.cos(a) * r, pos.Z + math.sin(a) * r
-		local sx = size * (0.7 + math.random() * 0.8)
-		local h = size * (0.32 + math.random() * 0.3)
-		-- assenta no chão de verdade: monte de neve enterrado não existe
-		local y = Build.groundY(x, z, pos.Y)
-		Build.part({
-			Size = Vector3.new(sx, h, sx * (0.6 + math.random() * 0.7)),
-			CFrame = CFrame.new(x, y + h * 0.22, z) * CFrame.Angles(0, math.random() * math.pi * 2, 0),
-			Color = Color3.fromRGB(237, 241, 245),
-			Material = Enum.Material.Snow,
-			CanCollide = false,
-			CastShadow = false,
-		})
+		-- neve não nasce em chão batido: preserva a terra plana da rua e da praça
+		if not Build.isSnowAt(x, z) then
+			continue
+		end
+		-- TRAVA DE ACÚMULO. groundY mede o terreno, e o terreno já inclui a neve
+		-- que acabamos de colocar: sem teto, cada monte se apoia no anterior e a
+		-- neve cresce sem fim até virar um paredão branco. O teto é relativo à
+		-- altura que o chamador pediu, não absoluto, pra continuar funcionando
+		-- em encosta.
+		local y = math.min(Build.groundY(x, z, pos.Y), pos.Y + 2.0)
+		local rad = size * (0.6 + math.random() * 0.55)
+		-- quanto o monte sobe acima do chão: raso, senão vira parede de neve
+		local rise = size * (0.2 + math.random() * 0.22)
+		workspace.Terrain:FillBall(Vector3.new(x, y - rad + rise, z), rad, Enum.Material.Snow)
 	end
 end
 
@@ -419,16 +468,19 @@ function Build.lantern(pos: Vector3, withLight: boolean?)
 	-- PointLight, não o tamanho do bloco aceso.
 	local flame = Build.part({
 		Shape = Enum.PartType.Ball,
-		Size = Vector3.new(0.55, 0.55, 0.55),
+		Size = Vector3.new(0.42, 0.42, 0.42),
 		CFrame = CFrame.new(cx),
 		Color = Build.C.FIRE,
 		Material = Enum.Material.Neon,
-		Transparency = 0.25,
+		Transparency = 0.45,
 		CanCollide = false,
 		CastShadow = false,
 	})
 	if withLight then
-		Build.light(flame, Build.C.FIRE, 1.4, 26)
+		-- Brilho 1,4 com alcance 26 em pleno dia jogava uma POÇA branca no chão,
+		-- e 8 lampiões na praça somavam poça com poça até a praça inteira
+		-- estourar. A lanterna tem que marcar presença, não iluminar o mapa.
+		Build.light(flame, Build.C.FIRE, 0.55, 15)
 	end
 end
 

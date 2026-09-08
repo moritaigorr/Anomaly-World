@@ -59,7 +59,7 @@ local VENDORS: { Vendor } = {
 		id = "alquimista",
 		nome = "Yrsa da Bruma",
 		papel = "ALQUIMIA",
-		corA = Color3.fromRGB(86, 62, 122),
+		corA = Color3.fromRGB(74, 60, 96),
 		corB = Color3.fromRGB(226, 224, 232),
 		tunica = Color3.fromRGB(62, 52, 84),
 	},
@@ -349,7 +349,7 @@ local function brazier(pos: Vector3)
 		CanCollide = false,
 		CastShadow = false,
 	})
-	Build.light(fire, C.FIRE, 2.6, 46)
+	Build.light(fire, C.FIRE, 1.0, 22)
 end
 
 -- =================================================================== BANCO
@@ -491,7 +491,7 @@ local function lightLine(a: Vector3, b: Vector3)
 				CastShadow = false,
 			})
 			if i % 3 == 0 then
-				Build.light(bulb, Color3.fromRGB(255, 196, 130), 0.9, 20)
+				Build.light(bulb, Color3.fromRGB(255, 196, 130), 0.3, 10)
 			end
 		end
 		prev = p
@@ -500,34 +500,40 @@ end
 
 -- =================================================================== PRAÇA
 function Market.build(center: Vector3, radius: number)
-	-- CHÃO. Praça cheia de gente o dia inteiro não acumula neve no miolo: o
-	-- centro é pisoteado até o chão. A neve sobra só na borda, e é isso que
-	-- desenha o limite da praça sem precisar de nenhuma linha reta.
-	for i = 1, 26 do
-		local a = (i / 26) * math.pi * 2 + math.random() * 0.2
-		local off = math.sqrt(math.random()) * radius * 0.62
+	-- CHÃO DA PRAÇA.
+	--
+	-- Isto eram 90 LAJES de calçamento sorteadas e sobrepostas, cada uma com
+	-- rotação e tamanho aleatórios, todas na mesma altura. O resultado é o que
+	-- se vê quando se olha pra baixo: retângulo em cima de retângulo brigando
+	-- por z, com quinas soltas apontando pra tudo quanto é lado.
+	--
+	-- Chão é TERRENO. Já aprendi isso na neve e não apliquei aqui. O terreno
+	-- tem material Cobblestone: superfície ÚNICA, contínua, sem sobreposição,
+	-- sem z-fighting, com iluminação e textura próprias — e custa zero peça.
+	--
+	-- A praça fica em dois anéis: calçamento no miolo (onde fica o monumento e
+	-- circula gente) e terra batida em volta (onde ficam as barracas), porque
+	-- calçamento até a borda vira um disco perfeito de novo.
+	local paved = radius * 0.5
+	for i = 1, 18 do
+		local a = (i / 18) * math.pi * 2 + math.random() * 0.25
+		local off = math.sqrt(math.random()) * paved * 0.5
 		Build.paintGround(
 			center.X + math.cos(a) * off,
 			center.Z + math.sin(a) * off,
-			radius * (0.42 + math.random() * 0.26)
+			paved * (0.7 + math.random() * 0.4),
+			Enum.Material.Cobblestone
 		)
 	end
-
-	-- calçamento irregular no miolo: pedra assentada, não um disco perfeito
-	for _ = 1, 90 do
-		local a = math.random() * math.pi * 2
-		local r = math.sqrt(math.random()) * radius * 0.62
-		local w = 4 + math.random() * 7
-		local px, pz = center.X + math.cos(a) * r, center.Z + math.sin(a) * r
-		Build.part({
-			Size = Vector3.new(w, 0.4, w * (0.6 + math.random() * 0.7)),
-			CFrame = CFrame.new(px, Build.groundY(px, pz, center.Y) + 0.04, pz)
-				* CFrame.Angles(0, math.random() * math.pi * 2, 0),
-			Color = Build.tint(C.COBBLE, 0.055),
-			Material = Enum.Material.Cobblestone,
-			CanCollide = false,
-			CastShadow = false,
-		})
+	-- anel de terra batida em volta do calçamento
+	for i = 1, 22 do
+		local a = (i / 22) * math.pi * 2 + math.random() * 0.2
+		local off = paved * 0.85 + math.random() * radius * 0.28
+		Build.paintGround(
+			center.X + math.cos(a) * off,
+			center.Z + math.sin(a) * off,
+			radius * (0.3 + math.random() * 0.2)
+		)
 	end
 
 	-- neve sobrando na borda
@@ -556,7 +562,7 @@ function Market.build(center: Vector3, radius: number)
 		CanCollide = false,
 		CastShadow = false,
 	})
-	Build.light(rune, C.RUNE, 1.6, 30)
+	Build.light(rune, C.RUNE, 0.8, 18)
 
 	-- BRASEIROS em volta do monumento
 	for i = 0, 3 do
@@ -564,19 +570,26 @@ function Market.build(center: Vector3, radius: number)
 		brazier(center + Vector3.new(math.cos(a) * 22, 0, math.sin(a) * 22))
 	end
 
-	-- BARRACAS num anel, cada uma virada pro centro
-	local n = #VENDORS
+	-- BARRACAS. Os ângulos são EXPLÍCITOS, não um anel regular, por um motivo
+	-- concreto: a rua principal atravessa a praça no eixo norte-sul (x≈0), e um
+	-- anel de seis barracas espaçadas igualmente plantava duas delas EM CIMA da
+	-- estrada. Praça de verdade tem a rua passando por dentro — o corredor tem
+	-- que ficar livre. Todos os ângulos abaixo mantêm |x| ≥ 29 studs.
+	local STALL_ANGLES = { 0, 40, 140, 180, 220, 320 }
+	local LAMP_ANGLES = { 20, 68, 112, 160, 200, 250, 290, 340 }
 	local ringR = radius * 0.74
 	local postTops: { Vector3 } = {}
+
 	for i, v in VENDORS do
-		local a = (i / n) * math.pi * 2 + math.rad(28)
+		local a = math.rad(STALL_ANGLES[i] or (i * 60))
 		local p = center + Vector3.new(math.cos(a) * ringR, 0, math.sin(a) * ringR)
 		-- a frente da barraca (+Z local) tem que olhar pro centro
 		stall(CFrame.lookAt(p, Vector3.new(center.X, p.Y, center.Z)), v)
+	end
 
-		-- poste de luz entre uma barraca e a próxima
-		local a2 = a + (math.pi * 2 / n) / 2
-		local lp = center + Vector3.new(math.cos(a2) * ringR, 0, math.sin(a2) * ringR)
+	for _, deg in LAMP_ANGLES do
+		local a = math.rad(deg)
+		local lp = center + Vector3.new(math.cos(a) * ringR, 0, math.sin(a) * ringR)
 		Build.lantern(lp, true)
 		table.insert(postTops, lp + Vector3.new(0, 8.4, 0))
 	end
@@ -588,7 +601,11 @@ function Market.build(center: Vector3, radius: number)
 	end
 
 	-- BANCO fora do anel, virado pro centro
-	local ba = math.rad(28) - math.pi * 2 / n / 2
+	-- Ângulo fixo, fora do anel e fora do corredor da rua (|x| = 23 studs).
+	-- Antes isto derivava de `n`, que deixou de existir quando o anel virou
+	-- lista explícita de ângulos — e o erro derrubava a construção da CIDADE
+	-- INTEIRA, não só do banco.
+	local ba = math.rad(110)
 	local bp = center + Vector3.new(math.cos(ba) * (radius + 16), 0, math.sin(ba) * (radius + 16))
 	bank(CFrame.lookAt(bp, Vector3.new(center.X, bp.Y, center.Z)))
 end

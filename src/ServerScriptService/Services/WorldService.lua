@@ -155,10 +155,19 @@ local function setupLighting()
 	-- luz baixa e fria do norte (a foto da Islândia é a referência exata)
 	-- 16h + latitude 64 deixava o sol quase no horizonte: a cena virava noite.
 	-- 14h mantém a luz baixa e fria do norte, mas com o mundo visível.
-	Lighting.ClockTime = 14.1
+	-- 14h é sol a pino: num mapa coberto de neve isso lava tudo, mata a sombra
+	-- longa e achata o relevo. A nota antiga dizia que 16h "virava noite" — mas
+	-- isso era com latitude 64. Em 48 o sol de 16h20 fica BAIXO sem sumir: dá
+	-- sombra comprida na neve, luz mais quente e contraste de verdade, que é
+	-- exatamente o cartão-postal nórdico da referência.
+	Lighting.ClockTime = 16.2
 	Lighting.GeographicLatitude = 48
-	Lighting.Brightness = 2.6
-	Lighting.ExposureCompensation = 0.25
+	-- Um mapa coberto de neve é quase todo branco, então ele satura o expositor
+	-- e a cena inteira lava: montanha vira mancha, muralha perde a face
+	-- sombreada e o grade dessaturado simplesmente não aparece. Puxar a
+	-- exposição pra baixo é o que devolve separação de valor num mundo branco.
+	Lighting.Brightness = 1.75
+	Lighting.ExposureCompensation = -0.15
 	Lighting.Ambient = Color3.fromRGB(92, 99, 108)
 	Lighting.OutdoorAmbient = Color3.fromRGB(138, 150, 164)
 	Lighting.FogColor = Color3.fromRGB(168, 180, 190)
@@ -168,16 +177,23 @@ local function setupLighting()
 	Lighting.EnvironmentDiffuseScale = 0.6
 	Lighting.EnvironmentSpecularScale = 0.4
 
-	if not Lighting:FindFirstChildOfClass("Atmosphere") then
-		local atmo = Instance.new("Atmosphere")
-		atmo.Density = 0.34
-		atmo.Offset = 0.1
-		atmo.Haze = 2.6
-		atmo.Glare = 0.3
-		atmo.Color = Color3.fromRGB(205, 214, 222)
-		atmo.Decay = Color3.fromRGB(118, 132, 146)
+	-- ATMOSFERA. Isto estava dentro de um `if not existe then criar` — e como o
+	-- place JÁ tinha um objeto Atmosphere, nenhuma destas propriedades era
+	-- aplicada nunca. O jogo rodava com Haze=0 e Glare=0, ou seja, sem NENHUMA
+	-- profundidade atmosférica: montanha a 600 studs com o mesmo contraste de
+	-- uma parede a 20. Criar se falta é uma coisa; CONFIGURAR é outra, e tem que
+	-- acontecer sempre.
+	local atmo = Lighting:FindFirstChildOfClass("Atmosphere")
+	if not atmo then
+		atmo = Instance.new("Atmosphere")
 		atmo.Parent = Lighting
 	end
+	atmo.Density = 0.36
+	atmo.Offset = 0.1
+	atmo.Haze = 2.6
+	atmo.Glare = 0.25
+	atmo.Color = Color3.fromRGB(205, 214, 222)
+	atmo.Decay = Color3.fromRGB(118, 132, 146)
 	-- NUVENS VOLUMÉTRICAS: talvez o maior ganho de realismo disponível só por
 	-- código. Céu chapado é uma das marcas registradas do visual Roblox.
 	local terrain = workspace.Terrain
@@ -210,17 +226,24 @@ local function setupLighting()
 	end
 	local grade = Lighting.AnomalyGrade :: ColorCorrectionEffect
 	grade.Saturation = -0.24
-	grade.Contrast = 0.18
+	grade.Contrast = 0.24
 	grade.Brightness = -0.02
 	grade.TintColor = Color3.fromRGB(226, 233, 241)
 	if not Lighting:FindFirstChild("AnomalyBloom") then
 		local b = Instance.new("BloomEffect")
 		b.Name = "AnomalyBloom"
-		b.Intensity = 0.35
-		b.Size = 24
-		b.Threshold = 1.9 -- alto: só fogo/runa estoura, janela não "lava" a tela
 		b.Parent = Lighting
 	end
+	-- Também precisa ser reconfigurado SEMPRE, pelo mesmo motivo da atmosfera.
+	-- Threshold 1,9 ainda deixava cada chama de 0,55 stud florescer numa bola
+	-- amarela de ~2,5 studs na tela.
+	local bloom = Lighting.AnomalyBloom :: BloomEffect
+	-- Size 20 fazia uma chama de 0,55 stud florescer numa bola amarela de ~2,5
+	-- studs na tela. O halo tem que ser menor que o objeto que o gera, senão a
+	-- luz vira mancha e come a geometria em volta.
+	bloom.Intensity = 0.12
+	bloom.Size = 8
+	bloom.Threshold = 2.2
 
 	-- raios de sol atravessando a névoa: é o que dá aquela luz "de filme"
 	if not Lighting:FindFirstChild("AnomalySun") then

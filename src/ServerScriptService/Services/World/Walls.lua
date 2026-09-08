@@ -179,7 +179,7 @@ local function tower(pos: Vector3, k: Cfg, tall: number)
 		CanCollide = false,
 		CastShadow = false,
 	})
-	Build.light(fire, C.FIRE, 2, 42)
+	Build.light(fire, C.FIRE, 0.9, 24)
 end
 
 -- ---------------- PORTARIA ----------------
@@ -310,14 +310,14 @@ function Walls.build(config: Config?)
 			-- Neve acumulada no pé, do lado de fora. Sem isso a muralha encosta na
 			-- planície numa linha reta e dura, e as duas parecem coisas separadas
 			-- empilhadas — não construção assentada num terreno.
-			Build.part({
-				Size = Vector3.new(BODY_T + BATTER_OUT * 2 + 5, 3.4, len),
-				CFrame = (flat * CFrame.new(0, 1.1, 0)) + outward * 2.2,
-				Color = Color3.fromRGB(236, 240, 243),
-				Material = Enum.Material.Snow,
-				CanCollide = false,
-				CastShadow = false,
-			})
+			-- TERRENO, não peça: uma barra branca de 3,4 x 21 contornando a
+			-- muralha inteira é exatamente o tipo de aresta reta que denuncia
+			-- geometria. Bolas de neve vizinhas se fundem num banco contínuo.
+			for k = 0, 1 do
+				local at = (flat * CFrame.new(0, 0, (k - 0.5) * len * 0.55)).Position
+					+ outward * (BODY_T / 2 + 2.6)
+				Build.drift(Vector3.new(at.X, 2, at.Z), 2.4, 5.2)
+			end
 			-- passarela interna, encostada na face de dentro
 			Build.part({
 				Size = Vector3.new(WALK_W, 1, len),

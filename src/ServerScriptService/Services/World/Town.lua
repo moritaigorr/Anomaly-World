@@ -424,29 +424,20 @@ local function trodden(cf: CFrame, width: number, len: number)
 		Build.paintGround(p.X, p.Z, width * (0.54 + math.random() * 0.22))
 	end
 
-	-- NEVE REMANESCENTE, só na transição. O terreno já é neve fora do núcleo
-	-- pintado, então aqui basta uma faixa RAREFEITA de montinhos encostando na
-	-- borda: é o degradê entre "pisoteado" e "intocado" que desenha a estrada.
-	-- Antes eram três faixas densas dos dois lados e o resultado foi 2.377 peças
-	-- de neve no mapa, que lavaram a cena inteira de branco.
-	local sstep = 7
+	-- NEVE REMANESCENTE nas margens, rareando em direção ao miolo. Também é
+	-- TERRENO (bolas que se fundem), não peça: é o degradê entre pisoteado e
+	-- intocado que desenha a estrada, e ele precisa ser macio pra funcionar.
+	local sstep = 6
 	local m = math.max(1, math.floor(len / sstep))
 	for i = 0, m - 1 do
 		local t = -len / 2 + sstep * (i + 0.5)
 		for _, sx in { -1, 1 } do
-			if math.random() < 0.55 then
-				local w = 2.0 + math.random() * 2.4
-				local h = 0.3 + math.random() * 0.25
-				local at = (cf * CFrame.new(sx * (0.44 + math.random() * 0.22) * width, 0, t + (math.random() - 0.5) * 4)).Position
-				Build.part({
-					Size = Vector3.new(w, h, w * (0.6 + math.random() * 0.7)),
-					CFrame = CFrame.new(at.X, Build.groundY(at.X, at.Z, 2) + h * 0.2, at.Z)
-						* CFrame.Angles(0, math.random() * math.pi, 0),
-					Color = Color3.fromRGB(233, 238, 242),
-					Material = Enum.Material.Snow,
-					CanCollide = false,
-					CastShadow = false,
-				})
+			-- duas faixas: a de fora quase sempre, a de dentro raramente
+			for _, band in { { u = 0.62, chance = 0.9, size = 4.6 }, { u = 0.46, chance = 0.35, size = 3.0 } } do
+				if math.random() < band.chance then
+					local at = (cf * CFrame.new(sx * band.u * width, 0, t + (math.random() - 0.5) * 4)).Position
+					Build.drift(Vector3.new(at.X, 2, at.Z), 1.6, band.size)
+				end
 			end
 		end
 	end
@@ -841,23 +832,26 @@ local function buildDistricts()
 		end
 	end
 
-	-- neve encostada nas construções (acúmulo no chão dá muito realismo)
+	-- Neve acumulada pela cidade. Eram 70 CAIXAS brancas de 4x0,7x3 deitadas no
+	-- chão (e ainda por cima enterradas em y=0,35, quando a superfície está em
+	-- y≈2). Agora é terreno: bolas que se fundem em banco macio.
 	for _ = 1, 70 do
 		local x = math.random(-150, 150)
 		local z = math.random(Town.GATE_Z, 60)
 		if math.sqrt(x * x + z * z) < 168 then
-			Build.snow(
-				CFrame.new(x, 0.35, z) * CFrame.Angles(0, math.random() * 6, 0),
-				Vector3.new(4 + math.random() * 7, 0.7, 3 + math.random() * 5)
-			)
+			Build.drift(Vector3.new(x, 2, z), 3.0, 5.5)
 		end
 	end
 end
 
 function Town.build()
+	-- ORDEM IMPORTA. Tudo que PINTA chão batido (ruas, praça, braseiros) tem que
+	-- rodar antes de tudo que ESPALHA neve, porque a neve só se deposita onde o
+	-- chão ainda é neve. Na ordem errada a praça nasceria por cima de montes já
+	-- formados e ficaria ondulada — a terra tem que ficar plana.
 	buildStreets()
-	buildDistricts()
 	Market.build(MARKET_C, MARKET_R)
+	buildDistricts()
 	buildKeep()
 end
 
