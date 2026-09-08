@@ -107,7 +107,51 @@ local function buildSpawn()
 	sp.Parent = Build.getRoot()
 end
 
+-- Nomes dos efeitos que ESTE arquivo gerencia. Qualquer outro efeito da mesma
+-- classe em Lighting é sobra (Toolbox, teste manual antigo) e vai embora.
+local MANAGED_FX = {
+	AnomalyGrade = true,
+	AnomalyBloom = true,
+	AnomalySun = true,
+	AnomalyDOF = true,
+}
+
+-- O Roblox EMPILHA efeitos de pós-processamento da mesma classe. Um Bloom
+-- perdido de intensidade 1.0 por cima do nosso de 0.35 lava a cena inteira e
+-- some com a gradação — foi exatamente o que aconteceu neste place. Skies
+-- duplicados são só peso morto (a engine usa o primeiro). Limpar aqui, e não
+-- só na mão no Studio, é o que impede a bagunça de voltar no próximo play.
+local function pruneStrayLighting(): string
+	local removed = {}
+	local seenSky, seenAtmo = false, false
+
+	for _, e in Lighting:GetChildren() do
+		local drop = false
+		if e:IsA("Sky") then
+			drop = seenSky
+			seenSky = true
+		elseif e:IsA("Atmosphere") then
+			drop = seenAtmo
+			seenAtmo = true
+		elseif e:IsA("BloomEffect") or e:IsA("SunRaysEffect")
+			or e:IsA("DepthOfFieldEffect") or e:IsA("ColorCorrectionEffect") then
+			drop = not MANAGED_FX[e.Name]
+		end
+		if drop then
+			table.insert(removed, e.Name .. "(" .. e.ClassName .. ")")
+			e:Destroy()
+		end
+	end
+
+	return #removed > 0 and table.concat(removed, ", ") or "nada"
+end
+
 local function setupLighting()
+	local pruned = pruneStrayLighting()
+	if pruned ~= "nada" then
+		print("[WorldService] efeitos de luz duplicados removidos: " .. pruned)
+	end
+
 	-- luz baixa e fria do norte (a foto da Islândia é a referência exata)
 	-- 16h + latitude 64 deixava o sol quase no horizonte: a cena virava noite.
 	-- 14h mantém a luz baixa e fria do norte, mas com o mundo visível.
