@@ -197,7 +197,6 @@ end
 local GROUND_TOP = 0
 
 function Build.paintGround(cx: number, cz: number, size: number, material: Enum.Material?)
-	local half = size / 2
 	local mat = material or Enum.Material.Ground
 
 	-- 1) NIVELA. Isto é o que faltava: trocar só o material deixava o morro de
@@ -216,14 +215,17 @@ function Build.paintGround(cx: number, cz: number, size: number, material: Enum.
 		mat
 	)
 
-	-- 2) PINTA o que sobrou de neve nas bordas do bloco (o FillBlock é quadrado
-	--    e duro; ReplaceMaterial num raio um pouco maior suaviza a transição
-	--    sem mexer em altura).
-	local region = Region3.new(
-		Vector3.new(cx - half - 3, -10, cz - half - 3),
-		Vector3.new(cx + half + 3, 12, cz + half + 3)
-	):ExpandToGrid(4)
-	workspace.Terrain:ReplaceMaterial(region, 4, Enum.Material.Snow, mat)
+	-- NÃO existe passo 2.
+	--
+	-- Havia aqui um ReplaceMaterial numa região maior que o bloco, "pra suavizar
+	-- a transição". Ele trocava o MATERIAL da neve vizinha por pedra SEM mexer na
+	-- altura — ou seja, o monte de neve continuava lá, com o formato dele, só que
+	-- agora vestido de calçamento. O resultado é pedra ondulada seguindo o
+	-- contorno da neve: ninguém assenta paralelepípedo em cima de um monte.
+	--
+	-- Pedra é o que foi NIVELADO, e só. O que está fora continua neve, com a
+	-- forma irregular que a neve tem — e é a neve que cai por cima da pedra na
+	-- borda, nunca o contrário.
 end
 
 -- NEVE DE TELHADO.
@@ -320,11 +322,16 @@ function Build.drift(pos: Vector3, spread: number, size: number)
 		-- lado da rua e TRANSBORDAVA por cima da pedra, misturando os dois
 		-- terrenos e levantando o calçamento. Neve, terra e pedra são três
 		-- superfícies distintas — nenhuma invade a outra.
+		-- O MIOLO da bola tem que estar em neve; a beirada dela PODE encostar na
+		-- pedra, porque é assim que fica certo: a neve cai por cima do
+		-- calçamento na borda. O que não pode é o monte nascer sobre a rua e
+		-- levantar a pedra — por isso o teste é a 45% do raio, não no raio todo.
+		local core = rad * 0.45
 		local footprintClear = Build.isSnowAt(x, z)
 		if footprintClear then
 			for k = 0, 3 do
 				local ang = k * math.pi / 2
-				if not Build.isSnowAt(x + math.cos(ang) * rad, z + math.sin(ang) * rad) then
+				if not Build.isSnowAt(x + math.cos(ang) * core, z + math.sin(ang) * core) then
 					footprintClear = false
 					break
 				end
@@ -338,9 +345,9 @@ function Build.drift(pos: Vector3, spread: number, size: number)
 		-- neve cresce sem fim até virar um paredão branco. O teto é relativo à
 		-- altura que o chamador pediu, não absoluto, pra continuar funcionando
 		-- em encosta.
-		local y = math.min(Build.groundY(x, z, pos.Y), pos.Y + 2.0)
+		local y = math.min(Build.groundY(x, z, pos.Y), pos.Y + 1.3)
 		-- quanto o monte sobe acima do chão: raso, senão vira parede de neve
-		local rise = size * (0.2 + math.random() * 0.22)
+		local rise = size * (0.16 + math.random() * 0.18)
 		workspace.Terrain:FillBall(Vector3.new(x, y - rad + rise, z), rad, Enum.Material.Snow)
 	end
 end
@@ -419,6 +426,57 @@ function Build.window(cf: CFrame, w: number, h: number, lit: boolean?)
 		CanCollide = false,
 		CastShadow = false,
 	})
+end
+
+-- FOGO.
+-- Uma esfera de Neon é uma BOLA DE PLÁSTICO ACESA: não tem movimento, não tem
+-- borda quente, e o brilho do Neon a infla na tela até virar um disco amarelo
+-- chapado. Fogo se lê por MOVIMENTO e por gradiente de cor — do branco-quente
+-- no núcleo ao laranja escuro na ponta. Um emissor resolve os dois, e o núcleo
+-- de Neon vira só a brasa no meio.
+function Build.fire(at: Vector3, scale: number, lightRange: number?): Part
+	local core = Build.part({
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.new(0.9, 0.9, 0.9) * scale,
+		CFrame = CFrame.new(at),
+		Color = Color3.fromRGB(255, 176, 92),
+		Material = Enum.Material.Neon,
+		Transparency = 0.45,
+		CanCollide = false,
+		CastShadow = false,
+	})
+
+	local fx = Instance.new("ParticleEmitter")
+	fx.Name = "Chama"
+	fx.Rate = 16
+	fx.Lifetime = NumberRange.new(0.45, 0.85)
+	fx.Speed = NumberRange.new(1.6 * scale, 3.2 * scale)
+	fx.SpreadAngle = Vector2.new(14, 14)
+	fx.Acceleration = Vector3.new(0, 5 * scale, 0)
+	fx.LightEmission = 0.85
+	fx.LightInfluence = 0
+	fx.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1.5 * scale),
+		NumberSequenceKeypoint.new(0.45, 1.1 * scale),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	fx.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.35),
+		NumberSequenceKeypoint.new(0.6, 0.55),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	-- branco-quente no nascimento, laranja no meio, vermelho escuro ao apagar
+	fx.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 236, 190)),
+		ColorSequenceKeypoint.new(0.45, Color3.fromRGB(255, 152, 56)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(150, 44, 20)),
+	})
+	fx.Parent = core
+
+	if lightRange then
+		Build.light(core, Color3.fromRGB(255, 170, 96), 0.6, lightRange)
+	end
+	return core
 end
 
 -- luz pontual barata (usar com moderação: luz custa performance)
@@ -501,26 +559,7 @@ function Build.lantern(pos: Vector3, withLight: boolean?)
 		CanCollide = false,
 		CastShadow = false,
 	})
-	-- CHAMA. Era um CUBO de Neon opaco: com bloom em cima, virava um retângulo
-	-- amarelo chapado flutuando na rua — a leitura mais "Roblox" que existe numa
-	-- luz. Esfera + transparência lê como brilho; a luz de verdade quem faz é o
-	-- PointLight, não o tamanho do bloco aceso.
-	local flame = Build.part({
-		Shape = Enum.PartType.Ball,
-		Size = Vector3.new(0.42, 0.42, 0.42),
-		CFrame = CFrame.new(cx),
-		Color = Build.C.FIRE,
-		Material = Enum.Material.Neon,
-		Transparency = 0.45,
-		CanCollide = false,
-		CastShadow = false,
-	})
-	if withLight then
-		-- Brilho 1,4 com alcance 26 em pleno dia jogava uma POÇA branca no chão,
-		-- e 8 lampiões na praça somavam poça com poça até a praça inteira
-		-- estourar. A lanterna tem que marcar presença, não iluminar o mapa.
-		Build.light(flame, Build.C.FIRE, 0.55, 15)
-	end
+	Build.fire(cx, 0.55, 15)
 end
 
 return Build

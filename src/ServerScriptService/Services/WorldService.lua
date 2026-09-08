@@ -98,12 +98,14 @@ local function buildSpawn()
 	sp.Size = Vector3.new(16, 1, 16)
 	sp.CFrame = CFrame.new(SPAWN_POS)
 	sp.Anchored = true
-	sp.CanCollide = true
+	-- INVISÍVEL. O motor só precisa da instância pra nascer o jogador; o chão da
+	-- vila já é calçamento nivelado. Enquanto ela era visível, era uma laje
+	-- quadrada de 16x16 numa cor mais quente pousada EM CIMA da pedra cinza —
+	-- lia como um remendo, e era o "pilar de spawn" com a borda dura.
+	sp.Transparency = 1
+	sp.CanCollide = false
 	sp.Neutral = true
 	sp.Duration = 0
-	sp.Color = Build.C.COBBLE
-	sp.Material = Enum.Material.Cobblestone
-	sp.TopSurface = Enum.SurfaceType.Smooth
 	sp.Parent = Build.getRoot()
 end
 

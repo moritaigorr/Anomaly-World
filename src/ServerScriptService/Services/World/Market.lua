@@ -355,17 +355,7 @@ local function brazier(pos: Vector3)
 			CastShadow = false,
 		})
 	end
-	local fire = Build.part({
-		Shape = Enum.PartType.Ball,
-		Size = Vector3.new(2.6, 2.6, 2.6),
-		CFrame = CFrame.new(pos + Vector3.new(0, 5.4, 0)),
-		Color = C.FIRE,
-		Material = Enum.Material.Neon,
-		Transparency = 0.22,
-		CanCollide = false,
-		CastShadow = false,
-	})
-	Build.light(fire, C.FIRE, 1.0, 22)
+	Build.fire(pos + Vector3.new(0, 5.2, 0), 1.5, 22)
 end
 
 -- =================================================================== BANCO
@@ -621,7 +611,10 @@ function Market.build(center: Vector3, radius: number)
 	-- lista explícita de ângulos — e o erro derrubava a construção da CIDADE
 	-- INTEIRA, não só do banco.
 	local ba = math.rad(110)
-	local bx, bz = center.X + math.cos(ba) * (radius + 16), center.Z + math.sin(ba) * (radius + 16)
+	-- Na BORDA da praça, não fora dela. Fora do anel o banco obrigava um raio de
+	-- exclusão de 84 studs, que apagava as casas da cidade inteira.
+	local bankR = radius * 0.88
+	local bx, bz = center.X + math.cos(ba) * bankR, center.Z + math.sin(ba) * bankR
 	local bp = Vector3.new(bx, Build.groundY(bx, bz, 2), bz)
 	bank(CFrame.lookAt(bp, Vector3.new(center.X, bp.Y, center.Z)))
 end

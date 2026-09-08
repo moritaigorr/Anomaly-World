@@ -20,6 +20,11 @@ Town.GATE_Z = -160
 Town.KEEP_Z = 70
 Town.MAIN_ROAD_W = 22
 
+-- Soleiras das casas, registradas aqui porque house() precisa delas e roda
+-- muito antes do resto. Declarar isto lá embaixo, junto das ruas, fazia
+-- table.insert receber nil e DERRUBAVA a construção da cidade inteira.
+local doorsteps: { Vector3 } = {}
+
 -- ================================================================= CASA
 -- Encara +Z. w = largura (X), d = profundidade (Z).
 local function house(pos: Vector3, w: number, d: number, floors: number, ang: number, roofTile: boolean)
@@ -77,8 +82,11 @@ local function house(pos: Vector3, w: number, d: number, floors: number, ang: nu
 		Build.drift((base * o) + Vector3.new(0, 0.35, 0), 1.3, 2.3)
 	end
 	-- e limpa a soleira, caso a neve espalhada da cidade tenha caído ali
-	local doorAt = base * Vector3.new(0, 0, d / 2 + 2.2)
-	Build.paintGround(doorAt.X, doorAt.Z, 7, Enum.Material.Cobblestone)
+	-- 1,6 e não 2,4: a d/2 + 2,4 a soleira descolava da fachada e virava uma
+	-- laje de pedra solta na neve, sem casa em cima dela.
+	local doorAt = base * Vector3.new(0, 0, d / 2 + 1.6)
+	table.insert(doorsteps, doorAt)
+	Build.paintGround(doorAt.X, doorAt.Z, 9, Enum.Material.Cobblestone)
 
 	-- cornija separando pedra e reboco (quebra a leitura de "bloco único")
 	if floors > 1 then
@@ -583,9 +591,12 @@ local MARKET_C = Vector3.new(0, 0, -80)
 -- Raio da PRAÇA em si. Cresceu de 38 pra 52 porque agora ela é o hub social:
 -- seis barracas grandes num anel, braseiros, monumento e o banco fora do anel.
 local MARKET_R = 52
--- Raio de EXCLUSÃO de casas. Maior que a praça porque o banco fica fora do anel
--- (raio + 16) e ainda tem 13 de meia-profundidade.
-local MARKET_KEEPOUT = 84
+-- Raio de EXCLUSÃO de casas.
+-- Estava 84 pra caber o banco FORA do anel, e isso comeu metade da área
+-- construível: a cidade caiu de ~80 casas para praticamente nenhuma, virando um
+-- descampado de neve entre a praça e a muralha. O banco passou pra borda da
+-- própria praça, então 62 basta (praça 52 + folga).
+local MARKET_KEEPOUT = 62
 
 local function canPlace(x: number, z: number, w: number, d: number): boolean
 	local reach = math.max(w, d) / 2 + 3
@@ -844,11 +855,14 @@ local function buildDistricts()
 	-- Neve acumulada pela cidade. Eram 70 CAIXAS brancas de 4x0,7x3 deitadas no
 	-- chão (e ainda por cima enterradas em y=0,35, quando a superfície está em
 	-- y≈2). Agora é terreno: bolas que se fundem em banco macio.
-	for _ = 1, 70 do
+	-- 45 montes de 3,4 em vez de 70 de 5,5: com o tamanho anterior a cidade
+	-- afundava em DUNAS e as construções ficavam ilhadas. Neve entre casas é
+	-- acúmulo, não relevo.
+	for _ = 1, 45 do
 		local x = math.random(-150, 150)
 		local z = math.random(Town.GATE_Z, 60)
 		if math.sqrt(x * x + z * z) < 168 then
-			Build.drift(Vector3.new(x, 2, z), 3.0, 5.5)
+			Build.drift(Vector3.new(x, 2, z), 2.6, 3.4)
 		end
 	end
 end
@@ -873,12 +887,19 @@ function Town.build()
 		local len = Vector3.new(d.X, 0, d.Z).Magnitude
 		local mid = Vector3.new((r.from.X + r.to.X) / 2, 0, (r.from.Z + r.to.Z) / 2)
 		local cf = CFrame.lookAt(mid, Vector3.new(r.to.X, 0, r.to.Z))
-		local paveW = r.width * 0.82
-		local step = r.width * 0.5
+		-- Largura CHEIA. Estreitar isto pra 0,58 deixou a rua uma fita fininha:
+		-- a neve espalhada depois cobria toda a pedra que o repavimento não
+		-- garantia. O que causava a pedra ondulada da foto era o ReplaceMaterial
+		-- do paintGround, não a largura daqui — e aquele já saiu.
+		local paveW = r.width * 0.86
+		local step = r.width * 0.45
 		for i = 0, math.max(1, math.ceil(len / step)) - 1 do
 			local p = (cf * CFrame.new(0, 0, -len / 2 + step * (i + 0.5))).Position
 			Build.paintGround(p.X, p.Z, paveW, r.mat)
 		end
+	end
+	for _, at in doorsteps do
+		Build.paintGround(at.X, at.Z, 9, Enum.Material.Cobblestone)
 	end
 	Market.repave(MARKET_C, MARKET_R)
 end
