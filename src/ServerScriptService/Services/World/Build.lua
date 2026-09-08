@@ -18,8 +18,12 @@ Build.C = {
 	TIMBER = Color3.fromRGB(74, 58, 42),        -- vigas escuras
 	WOOD = Color3.fromRGB(107, 82, 56),
 	WOOD_DARK = Color3.fromRGB(70, 54, 38),
-	ROOF_TILE = Color3.fromRGB(122, 68, 54),    -- telha de barro (ref. AoT)
-	ROOF_SHINGLE = Color3.fromRGB(78, 66, 54),  -- madeira/ardósia (ref. Skyrim)
+	-- TELHADO. Estava escuro demais: (78,66,54) com o sol baixo de 16h20 lia como
+	-- BURACO PRETO, e a neve por cima virava mancha branca estourada em cima de
+	-- preto — o pior contraste possível, e some toda a leitura de telha.
+	-- Clareado o suficiente pra continuar escuro contra o céu, mas com valor.
+	ROOF_TILE = Color3.fromRGB(140, 82, 64),    -- telha de barro (ref. AoT)
+	ROOF_SHINGLE = Color3.fromRGB(108, 92, 76), -- madeira/ardósia (ref. Skyrim)
 	THATCH = Color3.fromRGB(138, 116, 72),      -- palha
 	SNOW = Color3.fromRGB(232, 236, 239),
 	COBBLE = Color3.fromRGB(110, 106, 99),      -- rua de pedra
@@ -194,7 +198,9 @@ end
 -- Nível do chão da planície. Terra.lua preenche a neve com o topo em 0, e a
 -- isosuperfície do voxel renderiza isso em y≈2. Tudo que "normaliza o chão"
 -- tem que mirar exatamente neste valor, senão vira degrau.
-local GROUND_TOP = 0
+-- Tem que ser o MESMO valor do Terra.lua, senão rua e praça ficam num degrau
+-- em relação à planície. Veja lá o porquê de não ser 0.
+local GROUND_TOP = -1
 
 function Build.paintGround(cx: number, cz: number, size: number, material: Enum.Material?)
 	local mat = material or Enum.Material.Ground
@@ -240,7 +246,10 @@ end
 -- dir       = +1/-1: de que lado da cumeeira esta água está
 function Build.roofSnow(rcf: CFrame, slopeLen: number, depth: number, dir: number)
 	-- Faixas ESTREITAS: quanto mais estreita, mais a linha de degelo serrilha.
-	local strips = math.max(5, math.floor(depth / 2.2))
+	-- Faixas de 2,2 studs davam uma escadaria retangular grosseira: de perto a
+	-- neve lia como pixel art. Quanto mais FINA a faixa, mais a linha de degelo
+	-- vira contorno em vez de degrau.
+	local strips = math.max(9, math.floor(depth / 1.05))
 	local stripD = depth / strips
 
 	-- A cobertura passeia por uma ONDA LENTA em vez de ser sorteada faixa a
@@ -252,8 +261,10 @@ function Build.roofSnow(rcf: CFrame, slopeLen: number, depth: number, dir: numbe
 
 	for i = 0, strips - 1 do
 		local u = i / strips
-		local wave = math.sin(u * 6.5 + phase) * 0.22 + math.sin(u * 13.0 + phase * 2.1) * 0.10
-		local cover = bias + wave + (math.random() - 0.5) * 0.09
+		-- amplitude menor entre faixas vizinhas: com faixa fina, onda alta vira
+		-- serra. O que se quer é contorno irregular, não dente.
+		local wave = math.sin(u * 5.0 + phase) * 0.16 + math.sin(u * 11.0 + phase * 2.1) * 0.07
+		local cover = bias + wave + (math.random() - 0.5) * 0.05
 		-- abaixo disso a placa simplesmente não existe: buraco na cobertura
 		if cover > 0.11 then
 			cover = math.min(cover, 0.80)
@@ -490,8 +501,16 @@ function Build.light(parent: BasePart, color: Color3, brightness: number, range:
 	return l
 end
 
--- barril / caixa: props que dão vida às ruas (ref. Riverwood)
+-- PROPS DE RUA. Todos ASSENTAM no chão sozinhos.
+--
+-- Quem chama passava y = 0, mas a superfície do terreno está em y≈2: barril,
+-- caixa e pilha de lenha nasciam ENTERRADOS 2 studs. Um barril de 3 de altura
+-- com 2 enterrados vira uma tampa escura deitada na neve — era o que parecia
+-- "laje preta chapada" espalhada pela cidade. Snapando aqui, todo chamador é
+-- corrigido de uma vez, inclusive os que já passavam a altura certa (o raycast
+-- devolve o mesmo valor).
 function Build.barrel(pos: Vector3)
+	pos = Vector3.new(pos.X, Build.groundY(pos.X, pos.Z, pos.Y), pos.Z)
 	Build.post(pos, 3, 2.2, Build.C.WOOD, Enum.Material.Wood)
 	Build.part({
 		Size = Vector3.new(2.35, 0.3, 2.35),
@@ -503,6 +522,7 @@ function Build.barrel(pos: Vector3)
 end
 
 function Build.crate(pos: Vector3, size: number)
+	pos = Vector3.new(pos.X, Build.groundY(pos.X, pos.Z, pos.Y), pos.Z)
 	Build.part({
 		Size = Vector3.new(size, size, size),
 		CFrame = CFrame.new(pos + Vector3.new(0, size / 2, 0))
@@ -529,6 +549,7 @@ end
 
 -- lanterna de rua: poste de ferro, braço curvo e gaiola com chama
 function Build.lantern(pos: Vector3, withLight: boolean?)
+	pos = Vector3.new(pos.X, Build.groundY(pos.X, pos.Z, pos.Y), pos.Z)
 	Build.post(pos, 8, 0.45, Build.C.TIMBER, Enum.Material.Metal)
 	-- braço que projeta a lanterna pro lado
 	Build.part({

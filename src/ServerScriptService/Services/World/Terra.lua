@@ -8,8 +8,19 @@ local Terrain = workspace.Terrain
 
 local Terra = {}
 
--- topo do terreno fica em y = 0 (todo o resto do mundo assume isso)
-local GROUND_TOP = 0
+-- ALTURA DO CHÃO.
+--
+-- O resto do mundo assume que o chão está em y = 0 e constrói pra cima a partir
+-- daí. Só que o voxel de terreno tem 4 studs e a isosuperfície NÃO cai no topo
+-- do preenchimento: medido em jogo, preencher até 0 renderiza a superfície em
+-- y = 2. Resultado: todo prop colocado em y = 0 nascia DOIS STUDS ENTERRADO —
+-- barril de 3 de altura virava uma tampa deitada na neve.
+--
+-- A quantização não permite acertar 0 exatamente (topo -1 -> superfície 1,0;
+-- topo -2 -> superfície -1,0), mas -1 corta o enterramento pela metade em todo
+-- o mapa de uma vez, e é uma linha em vez de 96 pontos de chamada.
+-- Build.GROUND_TOP acompanha este valor: os dois preenchem o mesmo nível.
+local GROUND_TOP = -1
 local PLAIN = 1500 -- extensão da planície (era 900: dava pra ver a borda cortada)
 local SEA_FROM = 300 -- a partir deste X começa o fiorde (leste)
 

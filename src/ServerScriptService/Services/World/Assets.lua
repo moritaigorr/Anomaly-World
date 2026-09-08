@@ -15,12 +15,22 @@ local Build = require(script.Parent.Build)
 local Assets = {}
 
 -- Catálogo. targetSize = maior dimensão desejada, em studs.
-Assets.catalog = {
-	BLACKSMITH = { id = 134157977366592, targetSize = 34 },
-	TOWER = { id = 139885000152123, targetSize = 40 },
-	BRIDGE = { id = 88372118858969, targetSize = 34 },
-	DOOR = { id = 87841819222661, targetSize = 13 },
-}
+-- CATÁLOGO VAZIO, de propósito.
+--
+-- Os quatro IDs que estavam aqui não servem:
+--   TOWER, BRIDGE, DOOR  -> "User is not authorized to access Asset". Nunca
+--                           carregaram; produziam três erros a cada build e as
+--                           chamadas de posicionamento não faziam nada.
+--   BLACKSMITH           -> carregava, mas como UM MeshPart de 34x29x26 studs
+--                           com TextureID vazio e material Plastic: um blob
+--                           cinza chapado, mais alto que qualquer casa, com
+--                           colisão, plantado duas vezes dentro da cidade.
+--
+-- O carregador continua aqui porque é útil e seguro (ele apaga qualquer script
+-- do modelo antes de entrar no jogo). Basta preencher o catálogo com IDs que a
+-- conta realmente possua. Até lá, a ferraria é construída pelo World/Forge.lua,
+-- com o mesmo kit das casas — coerente com a cidade por construção.
+Assets.catalog = {}
 
 local cache: { [string]: Model? } = {}
 local failed: { [string]: boolean } = {}
@@ -216,36 +226,9 @@ function Assets.statusLine(): string
 	return ("assets %d ok, falhou: %s"):format(#okNames, table.concat(badNames, ","))
 end
 
-function Assets.populate(gateZ: number, keepZ: number)
-	-- FERRARIAS: uma na praça do mercado, outra no bairro do portão.
-	-- (é o modelo mais detalhado que temos — vale repetir em pontos focais)
-	Assets.spawn("BLACKSMITH", Vector3.new(-50, 0, -52), 115)
-	Assets.spawn("BLACKSMITH", Vector3.new(56, 0, -128), -70)
-
-	-- PONTES: na saída do portão e uma passagem lateral
-	Assets.spawn("BRIDGE", Vector3.new(0, 0, gateZ - 46), 0)
-	Assets.spawn("BRIDGE", Vector3.new(-118, 0, -80), 90)
-
-	-- TORRES: guaritas nos quadrantes + flanqueando a via principal.
-	-- Repetir a torre é barato (um download, vários clones) e dá ritmo à cidade.
-	local towers = {
-		{ x = -96, z = -118, r = 0 },
-		{ x = 96, z = -118, r = 0 },
-		{ x = -96, z = -6, r = 0 },
-		{ x = 96, z = -6, r = 0 },
-		{ x = -34, z = gateZ + 12, r = 0 },
-		{ x = 34, z = gateZ + 12, r = 0 },
-		{ x = -40, z = keepZ - 34, r = 0 },
-		{ x = 40, z = keepZ - 34, r = 0 },
-	}
-	for _, p in towers do
-		Assets.spawn("TOWER", Vector3.new(p.x, 0, p.z), p.r)
-	end
-
-	-- PORTÕES ARQUEADOS: entrada do Salão do Jarl e a passagem do portão sul
-	Assets.spawn("DOOR", Vector3.new(0, 0, keepZ + 0.6), 180)
-	Assets.spawn("DOOR", Vector3.new(-7, 0, gateZ - 24), 0)
-	Assets.spawn("DOOR", Vector3.new(7, 0, gateZ - 24), 0)
+function Assets.populate(_gateZ: number, _keepZ: number)
+	-- Sem catálogo não há nada a posicionar. As construções que estes IDs
+	-- deveriam trazer (ferraria, torres, pontes, portões) hoje são procedurais.
 end
 
 return Assets

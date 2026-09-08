@@ -11,6 +11,7 @@
 local Terrain = workspace.Terrain
 
 local Build = require(script.Parent.Build)
+local Forge = require(script.Parent.Forge)
 local Market = require(script.Parent.Market)
 local C = Build.C
 
@@ -214,7 +215,13 @@ local function house(pos: Vector3, w: number, d: number, floors: number, ang: nu
 					0.42 + (courses - ci) * 0.055,
 					0
 				),
-				Color = roofCol:Lerp(Color3.fromRGB(20, 16, 14), 0.05 + (ci % 2) * 0.06),
+				-- Alternar CLARO/ESCURO em torno da cor base, em vez de escurecer
+				-- sempre em direção ao preto: assim a fiada aparece como relevo e
+				-- não como sujeira acumulando até o telhado sumir.
+				-- diferença SUTIL: a 0,1/0,12 a alternância virava faixa clara
+				-- atravessando o telhado em vez de leitura de fiada
+				Color = (ci % 2 == 0) and roofCol:Lerp(Color3.fromRGB(226, 216, 202), 0.045)
+					or roofCol:Lerp(Color3.fromRGB(28, 24, 20), 0.06),
 				Material = roofTile and Enum.Material.Slate or Enum.Material.WoodPlanks,
 				CanCollide = false,
 				CastShadow = false,
@@ -598,6 +605,15 @@ local MARKET_R = 52
 -- própria praça, então 62 basta (praça 52 + folga).
 local MARKET_KEEPOUT = 62
 
+-- FERRARIAS. Ficam registradas aqui porque precisam de área livre de casas e
+-- porque são construídas ANTES do bairro — se nascerem depois, uma casa já está
+-- no lugar e as duas se atravessam.
+local FORGES = {
+	{ pos = Vector3.new(-58, 0, -44), rot = 118 },
+	{ pos = Vector3.new(64, 0, -122), rot = -66 },
+}
+local FORGE_CLEAR = 24
+
 local function canPlace(x: number, z: number, w: number, d: number): boolean
 	local reach = math.max(w, d) / 2 + 3
 	if math.sqrt(x * x + z * z) + reach > INNER_LIMIT then
@@ -609,6 +625,12 @@ local function canPlace(x: number, z: number, w: number, d: number): boolean
 	end
 	if math.abs(x) < Town.MAIN_ROAD_W / 2 + reach then
 		return false -- em cima da via principal
+	end
+	for _, f in FORGES do
+		local fx, fz = x - f.pos.X, z - f.pos.Z
+		if math.sqrt(fx * fx + fz * fz) < FORGE_CLEAR + reach then
+			return false -- em cima da ferraria
+		end
 	end
 	-- O banco fica FORA do anel da praça. Em vez de inflar o raio de exclusão da
 	-- praça inteira por causa dele (o que já apagou as casas da cidade uma vez),
@@ -798,17 +820,22 @@ local function buildDistricts()
 		local x = math.random(-140, 140)
 		local z = math.random(Town.GATE_Z + 18, 48)
 		if math.abs(x) > Town.MAIN_ROAD_W / 2 + 3 and math.sqrt(x * x + z * z) < 165 then
-			local p = Vector3.new(x, 0, z)
+			-- O prop nasce NO CHÃO medido, não em y=0. Barril, caixa, pilha de
+			-- lenha, cerca e carroça eram todos construídos a partir de zero e
+			-- ficavam enterrados — um barril de 3 studs com 1,4 enterrado vira
+			-- uma tampa escura deitada na neve. Uma linha resolve o bloco todo.
+			local p = Vector3.new(x, Build.groundY(x, z, 1), z)
 			local r = math.random()
 			if r < 0.3 then
 				Build.barrel(p)
 			elseif r < 0.55 then
 				Build.crate(p, 1.8 + math.random() * 1.6)
 			elseif r < 0.7 then
-				-- pilha de lenha
+				-- pilha de lenha. A altura sai do CHÃO medido, não de y=0: com a
+				-- superfície em y≈2 a pilha inteira nascia enterrada.
 				for i = 0, 2 do
 					Build.cyl(
-						CFrame.new(x, 0.6 + i * 1.1, z) * CFrame.Angles(0, math.random() * 3, math.rad(90)),
+						CFrame.new(x, p.Y + 0.6 + i * 1.1, z) * CFrame.Angles(0, math.random() * 3, math.rad(90)),
 						3.5,
 						1,
 						C.WOOD_DARK,
@@ -882,6 +909,9 @@ function Town.build()
 	-- formados e ficaria ondulada — a terra tem que ficar plana.
 	buildStreets()
 	Market.build(MARKET_C, MARKET_R)
+	for _, f in FORGES do
+		Forge.build(f.pos, f.rot)
+	end
 	buildDistricts()
 	buildKeep()
 

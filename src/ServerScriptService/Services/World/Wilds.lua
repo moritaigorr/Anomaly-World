@@ -49,7 +49,8 @@ local function forest()
 		local x, z = math.cos(ang) * dist, math.sin(ang) * dist
 		-- não planta no mar (leste) nem em cima das zonas/boss
 		if x < 280 then
-			local p = Vector3.new(x, 0, z)
+			-- no chão medido, não em y=0 (a superfície do terreno não está em 0)
+			local p = Vector3.new(x, Build.groundY(x, z, 1), z)
 			local ok = (p - Wilds.BOSS_POS).Magnitude > 70
 			for _, zone in ZoneData.zones do
 				if (p - zone.center).Magnitude < zone.radius + 8 then
