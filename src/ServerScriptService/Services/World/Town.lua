@@ -785,15 +785,11 @@ local function buildKeep()
 	for _, sx in { -20, 20 } do
 		local p = c + Vector3.new(sx, y0, -6)
 		Build.post(p, 4, 1.4, C.STONE_DARK, Enum.Material.Cobblestone)
-		local f = Build.part({
-			Size = Vector3.new(2.6, 1.8, 2.6),
-			CFrame = CFrame.new(p + Vector3.new(0, 4.4, 0)),
-			Color = C.FIRE,
-			Material = Enum.Material.Neon,
-			CanCollide = false,
-			CastShadow = false,
-		})
-		Build.light(f, C.FIRE, 2.4, 45)
+		-- Era um CUBO de Neon 2,6x1,8 com luz de brilho 2,4 e alcance 45: lia como
+		-- um retângulo amarelo chapado flutuando sobre o poste, e a poça de luz
+		-- estourava a plataforma inteira. Mesmo defeito já corrigido nas lanternas
+		-- e nos braseiros da praça — este ficou de fora.
+		Build.fire(p + Vector3.new(0, 4.4, 0), 1.2, 24)
 	end
 end
 

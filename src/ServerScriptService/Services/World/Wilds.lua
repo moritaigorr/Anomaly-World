@@ -83,7 +83,7 @@ local function zoneMarkers()
 			CanCollide = false,
 			CastShadow = false,
 		})
-		Build.light(r, C.RUNE, 2.4, 40)
+		Build.light(r, C.RUNE, 1.0, 22)
 		-- pedras menores em volta
 		for i = 1, 5 do
 			local a = (i / 5) * math.pi * 2
@@ -194,7 +194,7 @@ local function barrow()
 		CanCollide = false,
 		CastShadow = false,
 	})
-	Build.light(r, C.RUNE, 2, 30)
+	Build.light(r, C.RUNE, 0.9, 18)
 	-- boca escura da entrada
 	Build.part({
 		Size = Vector3.new(9, 11, 2),
@@ -234,7 +234,7 @@ local function bossCircle()
 			CastShadow = false,
 		})
 		if i % 3 == 0 then
-			Build.light(r, C.RUNE, 2, 45)
+			Build.light(r, C.RUNE, 0.9, 24)
 		end
 	end
 	-- estrada do portão até o círculo
