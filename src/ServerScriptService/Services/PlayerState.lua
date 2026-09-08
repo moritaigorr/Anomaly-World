@@ -19,6 +19,8 @@ export type State = {
 	blockStart: number,    -- os.clock() de quando começou a bloquear (janela de parry)
 	sprinting: boolean,    -- correndo AGORA (drena stamina enquanto se move)
 	sprintHeld: boolean,   -- Shift continua pressionado (intencao, nao estado)
+	mounted: string?,      -- id da montaria, ou nil a pe
+	mountCdUntil: number,  -- trava anti-spam do montar/desmontar
 	posture: number,       -- guarda restante
 	postureHitAt: number,  -- última vez que a guarda levou dano
 	stunUntil: number,     -- atordoado (guarda quebrada): não pode agir
@@ -50,6 +52,8 @@ function PlayerState.init(player: Player)
 		blockStart = 0,
 		sprinting = false,
 		sprintHeld = false,
+		mounted = nil,
+		mountCdUntil = 0,
 		posture = Constants.Posture.Max,
 		postureHitAt = 0,
 		stunUntil = 0,
@@ -116,6 +120,7 @@ function PlayerState.resetCombat(player: Player)
 	s.blocking = false
 	s.sprinting = false
 	s.sprintHeld = false
+	s.mounted = nil
 	s.comboIndex = 0
 	s.stamina = Constants.Player.MaxStamina
 end

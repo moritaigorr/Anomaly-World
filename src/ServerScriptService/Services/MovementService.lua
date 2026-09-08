@@ -18,6 +18,7 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Constants = require(ReplicatedStorage.Shared.Constants)
+local MountData = require(ReplicatedStorage.Shared.MountData)
 local Net = require(ReplicatedStorage.Shared.Net)
 local PlayerState = require(script.Parent.PlayerState)
 
@@ -42,7 +43,12 @@ local function applyWalkSpeed(player: Player)
 	if not (s and hum) then
 		return
 	end
-	if s.blocking then
+	-- MONTADO tem prioridade sobre tudo: quem está no cavalo não está bloqueando
+	-- nem correndo — qualquer uma dessas ações já teria desmontado.
+	if s.mounted then
+		local m = MountData.get(s.mounted)
+		hum.WalkSpeed = m and m.speed or Constants.Move.Walk
+	elseif s.blocking then
 		hum.WalkSpeed = Constants.Move.Blocking
 	elseif s.sprinting then
 		hum.WalkSpeed = Constants.Sprint.Speed
@@ -55,6 +61,7 @@ end
 -- existe pra não deixar a corrida engasgar (liga/desliga a cada meio segundo).
 local function canStartSprint(s: PlayerState.State): boolean
 	return not s.blocking
+		and not s.mounted -- a montaria já tem a velocidade dela
 		and os.clock() >= s.stunUntil
 		and s.stamina >= Constants.Sprint.MinToStart
 end
@@ -63,6 +70,12 @@ end
 -- pedir corrida sem fôlego era recusado e nunca mais voltava: o jogador ficava
 -- com Shift pressionado andando devagar, sem entender por quê. Com a intenção
 -- guardada, o Heartbeat religa a corrida assim que o fôlego (ou a guarda) permite.
+-- Exportado porque o MountService precisa reaplicar a velocidade ao montar e ao
+-- desmontar. Ele CHAMA daqui em vez de escrever WalkSpeed por conta própria:
+-- este módulo continua sendo o dono único da propriedade, que é a regra que
+-- esta base já quebrou uma vez com o script de Toolbox.
+MovementService.applyWalkSpeed = applyWalkSpeed
+
 local function onSprint(player: Player, down: unknown)
 	local s = PlayerState.get(player)
 	if not s then

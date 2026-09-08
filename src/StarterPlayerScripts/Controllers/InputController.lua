@@ -18,6 +18,7 @@ local HeavyRequest = Net.get("HeavyRequest")
 local UltimateRequest = Net.get("UltimateRequest")
 local SwapCoreRequest = Net.get("SwapCoreRequest")
 local SprintRequest = Net.get("SprintRequest")
+local MountRequest = Net.get("MountRequest")
 
 local player = Players.LocalPlayer
 
@@ -71,6 +72,10 @@ function InputController.Start(deps)
 			if CombatController then
 				CombatController.setBlocking(true) -- escudo visual
 			end
+		elseif input.KeyCode == Enum.KeyCode.H then
+			-- montar/desmontar. Só pedimos: quem decide (e valida se dá pra
+			-- montar caindo, atordoado ou morto) é o MountService.
+			MountRequest:FireServer()
 		elseif input.KeyCode == Enum.KeyCode.T then
 			SwapCoreRequest:FireServer() -- troca de Anomaly Core
 		elseif input.KeyCode == Enum.KeyCode.B then
@@ -139,7 +144,7 @@ function InputController.Start(deps)
 
 	print(
 		"[InputController] pronto — M1 leve · F pesado · G ultimate · Q esquiva · "
-			.. "Shift corre · botão direito bloqueia/parry · Z/X/C/V poderes · R lock-on"
+			.. "Shift corre · H montaria · botão direito bloqueia/parry · Z/X/C/V poderes · R lock-on"
 	)
 end
 

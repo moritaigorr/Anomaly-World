@@ -51,6 +51,7 @@ function StateService.Start()
 						maxUlt = Constants.Ultimate.Max,
 						stunned = now < s.stunUntil,
 						sprinting = s.sprinting,
+						mounted = s.mounted,
 						coreName = core and core.nome or s.equippedCore,
 						database = s.database,
 						cooldowns = cds,

@@ -10,6 +10,7 @@ local CombatFormula = require(ReplicatedStorage.Shared.CombatFormula)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Constants = require(ReplicatedStorage.Shared.Constants)
 local PlayerState = require(script.Parent.PlayerState)
+local MountService = require(script.Parent.MountService)
 
 local CombatFeedback = Net.get("CombatFeedback")
 
@@ -147,6 +148,10 @@ function CombatUtil.damagePlayer(player: Player, amount: number, attacker: Model
 		CombatFeedback:FireClient(player, { kind = "dodged", position = hrp and hrp.Position })
 		return
 	end
+
+	-- Levar dano DERRUBA da montaria. Vem depois dos i-frames de propósito: um
+	-- golpe esquivado não derruba ninguém.
+	MountService.breakOnDamage(player)
 
 	local now = os.clock()
 
