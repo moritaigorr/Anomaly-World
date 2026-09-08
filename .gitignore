@@ -1,6 +1,9 @@
 # Rojo / Roblox
 *.rbxl
 *.rbxlx
+*.rbxm
+*.rbxmx
+.tools/
 *.rbxl.lock
 *.rbxlx.lock
 
