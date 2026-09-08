@@ -1,0 +1,15 @@
+# Two Windows devs + Rojo: store LF in the repo so diffs stay honest and the
+# two machines never fight over line endings. Working trees are left alone.
+* text=auto
+
+# Roblox / art binaries — git must never "fix" these
+*.rbxl   binary
+*.rbxm   binary
+*.png    binary
+*.jpg    binary
+*.tga    binary
+*.fbx    binary
+*.blend  binary
+*.ogg    binary
+*.mp3    binary
+*.wav    binary
