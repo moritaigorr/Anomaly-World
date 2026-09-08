@@ -51,19 +51,27 @@ local function applyWalkSpeed(player: Player)
 	end
 end
 
+-- não corre atordoado, de guarda alta, nem sem fôlego. O mínimo de stamina
+-- existe pra não deixar a corrida engasgar (liga/desliga a cada meio segundo).
+local function canStartSprint(s: PlayerState.State): boolean
+	return not s.blocking
+		and os.clock() >= s.stunUntil
+		and s.stamina >= Constants.Sprint.MinToStart
+end
+
+-- Guardamos a INTENÇÃO (sprintHeld) separada do ESTADO (sprinting). Sem isso,
+-- pedir corrida sem fôlego era recusado e nunca mais voltava: o jogador ficava
+-- com Shift pressionado andando devagar, sem entender por quê. Com a intenção
+-- guardada, o Heartbeat religa a corrida assim que o fôlego (ou a guarda) permite.
 local function onSprint(player: Player, down: unknown)
 	local s = PlayerState.get(player)
 	if not s then
 		return
 	end
 
-	if down == true then
-		-- não corre atordoado, de guarda alta, nem sem fôlego. O mínimo evita o
-		-- "corre 3 passos e para" quando a stamina está quase no fim.
-		if os.clock() < s.stunUntil or s.blocking or s.stamina < Constants.Sprint.MinToStart then
-			return
-		end
-		s.sprinting = true
+	s.sprintHeld = down == true
+	if s.sprintHeld then
+		s.sprinting = canStartSprint(s)
 	else
 		s.sprinting = false
 	end
@@ -142,6 +150,13 @@ function MovementService.Start()
 				-- Shift parado não pode consumir stamina (e não pode travar o regen).
 				local hum = humanoidOf(player)
 				local moving = hum ~= nil and hum.MoveDirection.Magnitude > 0
+
+				-- Shift ainda pressionado: a corrida volta sozinha quando o fôlego
+				-- se recupera ou a guarda desce. Ninguém deveria martelar a tecla.
+				if s.sprintHeld and not s.sprinting and canStartSprint(s) then
+					s.sprinting = true
+					applyWalkSpeed(player)
+				end
 
 				if s.sprinting and moving then
 					s.stamina -= Constants.Sprint.StaminaPerSec * dt

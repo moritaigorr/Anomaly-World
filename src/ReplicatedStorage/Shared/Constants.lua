@@ -102,10 +102,15 @@ Constants.Move = {
 
 -- CORRIDA (segurar Shift). Divide a MESMA stamina da esquiva: correr o mapa
 -- inteiro custa a sua proxima esquiva. Essa tensao e o ponto.
+-- O RITMO importa mais que os numeros. Drenar rapido com folego minimo baixo
+-- produz um martelo de 2s correndo / 1s andando que e pior que nao ter corrida:
+-- o jogador nao consegue LER o proprio estado. Com estes valores o ciclo vira
+-- ~11s de corrida cheia -> ~2,5s andando -> ~6s de corrida. Batidas longas,
+-- legiveis, e ainda custa a esquiva: correr ate o fim te deixa sem dodge (25).
 Constants.Sprint = {
 	Speed = 24,          -- 1.5x a caminhada: perceptivel sem virar patinete
-	StaminaPerSec = 12,  -- ~8s de corrida cheia; so cobra enquanto anda de verdade
-	MinToStart = 12,     -- stamina minima pra comecar a correr
+	StaminaPerSec = 9,   -- ~11s de corrida cheia (~264 studs); so cobra andando
+	MinToStart = 55,     -- folego pra (re)comecar: forca uma pausa que da pra ler
 }
 
 return Constants
