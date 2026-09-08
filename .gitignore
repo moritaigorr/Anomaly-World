@@ -1,8 +1,21 @@
-# Rojo build outputs
+# Rojo / Roblox
 *.rbxl
 *.rbxlx
-*.rbxm
-*.rbxmx
+*.rbxl.lock
+*.rbxlx.lock
 
-# Roblox Studio local state
-*.lock
+# Ferramentas
+/sourcemap.json
+/.rojo
+
+# Wally (dependências baixadas)
+/Packages
+/ServerPackages
+/DevPackages
+wally.lock
+
+# Editor / SO
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/settings.json

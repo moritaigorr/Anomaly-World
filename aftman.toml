@@ -1,0 +1,7 @@
+# aftman.toml — gerenciador de ferramentas (instala Rojo etc. na versão certa)
+# Instale o Aftman: https://github.com/LPGhatguy/aftman
+# Depois, na pasta do projeto: aftman install
+[tools]
+rojo = "rojo-rbx/rojo@7.4.4"
+stylua = "JohnnyMorganz/StyLua@2.0.2"
+selene = "Kampfkarren/selene@0.28.0"
