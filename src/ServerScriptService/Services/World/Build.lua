@@ -33,6 +33,7 @@ Build.C = {
 	RUNE = Color3.fromRGB(150, 224, 255),       -- a anomalia
 	BANNER = Color3.fromRGB(122, 52, 48),
 	BANNER_2 = Color3.fromRGB(58, 78, 106),
+	IRON = Color3.fromRGB(62, 64, 68),          -- ferragem: grade, cintas, dobradiças
 }
 
 local root: Instance? = nil
@@ -202,6 +203,15 @@ end
 -- em relação à planície. Veja lá o porquê de não ser 0.
 local GROUND_TOP = -1
 
+-- ALTURA EM QUE O CHÃO NIVELADO APARECE.
+-- O voxel de terreno tem 4 studs e a isosuperfície cai ~2 acima do topo do
+-- preenchimento: preencher até GROUND_TOP = -1 renderiza chão em y = 1. Medido,
+-- não deduzido. É a cota em que rua, praça e soleira ficam depois de niveladas,
+-- e portanto a cota em que uma construção tem que ser FUNDADA — usar y = 0
+-- (que é o que todo mundo assume) enterra a obra 1 stud, e onde ainda há relevo
+-- de neve (medido até 3,3) enterra até 3.
+Build.GROUND_LEVEL = GROUND_TOP + 2
+
 function Build.paintGround(cx: number, cz: number, size: number, material: Enum.Material?)
 	local mat = material or Enum.Material.Ground
 
@@ -308,6 +318,29 @@ function Build.paintDisc(cx: number, cz: number, radius: number, material: Enum.
 		radius,
 		mat
 	)
+end
+
+-- ELIPSOIDE ACHATADO.
+--
+-- Part com Shape = Ball IGNORA escala não-uniforme: por mais que se peça
+-- Size (8, 3, 8), o Roblox desenha uma ESFERA. Foi assim que a copa dos
+-- pinheiros virou uma pilha de bolas em vez de saias de galho. Quem aceita
+-- escala nos três eixos é o SpecialMesh — e ele não custa peça de física,
+-- só um objeto de desenho.
+function Build.blob(cf: CFrame, diametro: number, altura: number, color: Color3, material: Enum.Material): BasePart
+	local p = Build.part({
+		Size = Vector3.new(diametro, diametro, diametro),
+		CFrame = cf,
+		Color = color,
+		Material = material,
+		CanCollide = false,
+		CastShadow = false,
+	})
+	local m = Instance.new("SpecialMesh")
+	m.MeshType = Enum.MeshType.Sphere
+	m.Scale = Vector3.new(1, altura / diametro, 1)
+	m.Parent = p
+	return p
 end
 
 -- MONTE DE NEVE.

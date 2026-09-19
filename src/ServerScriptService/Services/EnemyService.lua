@@ -32,6 +32,11 @@ local function makeHealthBar(parent: BasePart, hum: Humanoid, nome: string, widt
 	bb.Size = UDim2.fromScale(width, width * 0.28)
 	bb.StudsOffset = Vector3.new(0, parent.Size.Y * 0.9, 0)
 	bb.AlwaysOnTop = true
+	-- MaxDistance NÃO É OPCIONAL aqui. O padrão é 0 = infinito: cada uma das 14
+	-- criaturas desenhava nome e barra de vida de qualquer ponto do mapa, por
+	-- cima da muralha (AlwaysOnTop), poluindo o horizonte inteiro. 80 studs é
+	-- mais que o alcance de agro (45), então você vê a barra de quem pode te ver.
+	bb.MaxDistance = 80
 	bb.Parent = parent
 
 	local label = Instance.new("TextLabel")

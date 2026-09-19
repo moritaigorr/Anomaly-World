@@ -59,6 +59,23 @@ local MERLON_W = 3.4 -- largura do merlão (o dente)
 local MERLON_GAP = 2.9 -- vão entre merlões: ISTO é a ameia
 local WALK_W = 6 -- passarela interna
 
+-- ---------------- PORTARIA: medidas ----------------
+-- BUG QUE ISTO CORRIGE (o buraco na muralha).
+-- A abertura era recortada por um arco fixo de ±0,055 da volta. Numa muralha de
+-- raio 185 a volta tem ~1162 studs, então ±0,055 apaga 128 studs de parede — e a
+-- portaria construída no lugar tem 70. Sobravam ~29 studs de buraco aberto de
+-- cada lado, por onde se via a cidade inteira de fora.
+-- Agora a abertura é definida pela PRÓPRIA geometria da portaria: o trecho de
+-- muralha só é pulado se o seu meio cair dentro da pegada dela. Os dois não têm
+-- como se desencontrar de novo, mesmo mudando raio, semente ou rugosidade.
+local TOWER_W = 22 -- largura de cada torre do portão
+local TOWER_D = 24 -- profundidade da portaria
+local TOWER_X = 24 -- centro de cada torre em X (torres ocupam |x| 13..35)
+local GATE_HALF = TOWER_X + TOWER_W / 2 -- 35: meia-largura total da portaria
+local PASS_HALF = 13 -- meia-largura do vão de passagem (26 de vão)
+local SPRING = 20 -- altura onde o arco começa a curvar
+local DOOR_H = 19
+
 local function cfg(c: Config?): Cfg
 	local t = c or {}
 	return {
@@ -96,10 +113,12 @@ local function heightAt(t: number, k: Cfg): number
 	return k.height + wobble * k.roughness
 end
 
--- distância angular curta entre dois t (ambos em 0..1)
-local function tDist(a: number, b: number): number
-	local d = math.abs(a - b) % 1
-	return math.min(d, 1 - d)
+-- O ponto cai dentro da pegada da portaria? É este teste — e não um arco fixo —
+-- que decide onde a muralha abre. Deixamos 2 studs de folga pra DENTRO da
+-- portaria: o trecho de muralha termina embutido na torre, então não existe
+-- fresta possível na junção.
+local function insideGate(p: Vector3): boolean
+	return p.Z < -100 and math.abs(p.X) < GATE_HALF - 2
 end
 
 -- ---------------- CRENELAGEM ----------------
@@ -172,82 +191,181 @@ local function tower(pos: Vector3, k: Cfg, tall: number)
 end
 
 -- ---------------- PORTARIA ----------------
+-- O QUE ESTAVA ERRADO (o "portão mal feito").
+-- As duas torres subiam 74 studs e entre elas não havia NADA do chão até y=58:
+-- um buraco retangular de 26 x 58 recortado na pedra, com duas portinhas de 22
+-- lá embaixo e um "arco" decorativo pendurado a 58 studs de altura, longe de
+-- qualquer coisa que ele pudesse estar arqueando. Lia como vão de elevador.
+--
+-- Agora a passagem tem escala humana e leitura de portaria: ombreiras retas até
+-- a linha de imposta, arco pleno de aduelas em cima, e ALVENARIA FECHADA do
+-- topo do arco até as ameias — que é o que faz uma portaria parecer maciça.
 local function gatehouse(k: Cfg)
 	local z = Town.GATE_Z - 25
 	local h = k.height
 	local step = MERLON_W + MERLON_GAP
+	local topY = h + 20 -- topo das torres
+	local crown = SPRING + PASS_HALF -- topo do intradorso do arco
 
+	-- ---- torres laterais ----
 	for _, sx in { -1, 1 } do
 		Build.part({
-			Size = Vector3.new(22, h + 20, 24),
-			CFrame = CFrame.new(sx * 24, (h + 20) / 2, z),
-			Color = C.STONE,
+			Size = Vector3.new(TOWER_W, topY, TOWER_D),
+			CFrame = CFrame.new(sx * TOWER_X, topY / 2, z),
+			Color = Build.tint(C.STONE, 0.04),
 			Material = Enum.Material.Cobblestone,
 		})
-		-- talude nas torres do portão
+		-- talude: a portaria nasce do chão, não pousa nele
 		Build.part({
-			Size = Vector3.new(22 + BATTER_OUT * 2, BATTER_H, 24 + BATTER_OUT * 2),
-			CFrame = CFrame.new(sx * 24, BATTER_H / 2, z),
+			Size = Vector3.new(TOWER_W + BATTER_OUT * 2, BATTER_H, TOWER_D + BATTER_OUT * 2),
+			CFrame = CFrame.new(sx * TOWER_X, BATTER_H / 2, z),
 			Color = C.STONE_DARK,
 			Material = Enum.Material.Cobblestone,
 		})
-		-- ameias reais no topo das torres do portão
-		for i = 0, 3 do
-			for _, sz in { -1, 1 } do
+		-- seteiras: recortes escuros e estreitos. Detalhe barato que dá escala a
+		-- uma face que sem ele é só um retângulo de pedra.
+		for i = 0, 2 do
+			for _, face in { -1, 1 } do
 				Build.part({
-					Size = Vector3.new(MERLON_W, PARAPET_H, 3.4),
-					CFrame = CFrame.new(sx * 24 + (i - 1.5) * step, h + 20 + PARAPET_H / 2, z + sz * 10.5),
-					Color = C.STONE_LIGHT,
-					Material = Enum.Material.Cobblestone,
+					Size = Vector3.new(0.9, 5.5, 1.2),
+					CFrame = CFrame.new(sx * TOWER_X + (i - 1) * 6, 26 + i % 2 * 9, z + face * (TOWER_D / 2)),
+					Color = Color3.fromRGB(16, 17, 19),
+					Material = Enum.Material.Slate,
 					CastShadow = false,
 				})
 			end
 		end
-		Build.banner(CFrame.new(sx * 24, h * 0.62, z - 12.2), 16, C.BANNER)
+		Build.banner(CFrame.new(sx * TOWER_X, h * 0.62, z - TOWER_D / 2 - 0.2), 16, C.BANNER)
 	end
 
-	-- travessa por cima da passagem
+	-- ---- ombreiras da passagem (do chão até a imposta) ----
+	for _, sx in { -1, 1 } do
+		Build.part({
+			Size = Vector3.new(2.4, SPRING, TOWER_D),
+			CFrame = CFrame.new(sx * (PASS_HALF + 1.2), SPRING / 2, z),
+			Color = Build.tint(C.STONE_DARK, 0.03),
+			Material = Enum.Material.Cobblestone,
+		})
+		-- imposta: a pedra saliente de onde o arco parte
+		Build.part({
+			Size = Vector3.new(4.2, 1.1, TOWER_D + 1),
+			CFrame = CFrame.new(sx * (PASS_HALF + 0.8), SPRING, z),
+			Color = C.STONE_LIGHT,
+			Material = Enum.Material.Cobblestone,
+		})
+	end
+
+	-- ---- arco pleno: aduelas radiais ----
+	-- A peça tem o eixo Y apontando pra FORA do centro do arco, então girar em Z
+	-- por (a - 90°) resolve a orientação sem tentativa e erro.
+	local NV = 19
+	local rV = PASS_HALF + 1.6
+	for i = 0, NV do
+		local a2 = (i / NV) * math.pi
+		Build.part({
+			Size = Vector3.new(3.0, 3.2, TOWER_D),
+			CFrame = CFrame.new(math.cos(a2) * rV, SPRING + math.sin(a2) * rV, z)
+				* CFrame.Angles(0, 0, a2 - math.pi / 2),
+			Color = Build.tint(C.STONE_LIGHT, 0.05),
+			Material = Enum.Material.Cobblestone,
+			CastShadow = false,
+		})
+	end
+
+	-- ---- ALVENARIA ACIMA DO ARCO ----
+	-- Isto é o que faltava: sem este bloco a portaria era um vão vazio de 58
+	-- studs. Vai do topo do arco até as ameias e fecha a fachada.
 	Build.part({
-		Size = Vector3.new(28, 16, 24),
-		CFrame = CFrame.new(0, h + 12, z),
-		Color = C.STONE,
+		Size = Vector3.new(PASS_HALF * 2 + 4.6, topY - (crown + 2), TOWER_D - 0.08),
+		CFrame = CFrame.new(0, (crown + 2) + (topY - (crown + 2)) / 2, z),
+		Color = Build.tint(C.STONE, 0.05),
 		Material = Enum.Material.Cobblestone,
 	})
-	for i = 0, 3 do
+	-- matacães: consolos salientes sobre a passagem (onde se despejava o que
+	-- fosse preciso em quem batia na porta). Quebram a face lisa lá no alto.
+	for i = -3, 3 do
+		Build.part({
+			Size = Vector3.new(2.6, 2.2, 3.4),
+			CFrame = CFrame.new(i * 4.2, topY - 7, z - TOWER_D / 2 - 1.2),
+			Color = C.STONE_DARK,
+			Material = Enum.Material.Cobblestone,
+			CastShadow = false,
+		})
+	end
+	-- friso contínuo marcando o nível da passarela, ligando as duas torres
+	Build.part({
+		Size = Vector3.new(GATE_HALF * 2 + CORNICE_OUT * 2, CORNICE_H, TOWER_D + CORNICE_OUT * 2),
+		CFrame = CFrame.new(0, topY - 1.2, z),
+		Color = C.STONE_LIGHT,
+		Material = Enum.Material.Cobblestone,
+		CastShadow = false,
+	})
+
+	-- ---- ameias no topo, atravessando a portaria inteira ----
+	local n = math.floor((GATE_HALF * 2) / step)
+	for i = 0, n - 1 do
+		local x = -((n - 1) * step) / 2 + i * step
 		for _, sz in { -1, 1 } do
 			Build.part({
 				Size = Vector3.new(MERLON_W, PARAPET_H, 3.4),
-				CFrame = CFrame.new((i - 1.5) * step, h + 20 + PARAPET_H / 2, z + sz * 10.5),
+				CFrame = CFrame.new(x, topY + PARAPET_H / 2, z + sz * (TOWER_D / 2 - 1.7)),
 				Color = C.STONE_LIGHT,
 				Material = Enum.Material.Cobblestone,
 				CastShadow = false,
 			})
 		end
 	end
-	-- arco
-	for i = 0, 8 do
-		local a = (i / 8) * math.pi
+
+	-- ---- grade (portcullis) meio baixada, presa no arco ----
+	for i = -4, 4 do
 		Build.part({
-			Size = Vector3.new(3, 3, 24),
-			CFrame = CFrame.new(math.cos(a) * 13, h + 4 + math.sin(a) * 9, z),
-			Color = C.STONE_DARK,
-			Material = Enum.Material.Cobblestone,
+			Size = Vector3.new(0.5, 11, 0.5),
+			CFrame = CFrame.new(i * 2.8, crown - 5.5, z + 7),
+			Color = C.IRON,
+			Material = Enum.Material.Metal,
+			CanCollide = false,
 			CastShadow = false,
 		})
 	end
-	-- portas abertas
-	for _, sx in { -1, 1 } do
+	for j = 0, 2 do
 		Build.part({
-			Size = Vector3.new(11, 22, 1.2),
-			CFrame = CFrame.new(sx * 8, 11, z - 11) * CFrame.Angles(0, math.rad(sx * 62), 0),
+			Size = Vector3.new(PASS_HALF * 2 - 2, 0.5, 0.5),
+			CFrame = CFrame.new(0, crown - 1 - j * 4.6, z + 7),
+			Color = C.IRON,
+			Material = Enum.Material.Metal,
+			CanCollide = false,
+			CastShadow = false,
+		})
+	end
+
+	-- ---- folhas da porta, abertas contra as ombreiras ----
+	for _, sx in { -1, 1 } do
+		local swing = math.rad(72)
+		local tip = Vector3.new(-sx * math.cos(swing), 0, -math.sin(swing))
+		local hinge = Vector3.new(sx * PASS_HALF, DOOR_H / 2, z - TOWER_D / 2 + 2)
+		local center = hinge + tip * (PASS_HALF / 2)
+		local cf = CFrame.lookAt(center, center + tip)
+		Build.part({
+			Size = Vector3.new(1.4, DOOR_H, PASS_HALF),
+			CFrame = cf,
 			Color = C.WOOD_DARK,
 			Material = Enum.Material.WoodPlanks,
 		})
+		-- ferragens: duas cintas de ferro por folha
+		for _, fy in { -DOOR_H / 4, DOOR_H / 4 } do
+			Build.part({
+				Size = Vector3.new(1.7, 1.0, PASS_HALF - 0.6),
+				CFrame = cf * CFrame.new(0, fy, 0),
+				Color = C.IRON,
+				Material = Enum.Material.Metal,
+				CanCollide = false,
+				CastShadow = false,
+			})
+		end
 	end
+
 	-- ESTRADA SAINDO DO PORTÃO. Fora dos muros ninguém assentou pedra: aqui é
-	-- terra batida mesmo. E era uma LAJE de 20x0,5 pousada em y=0,25 — ou seja,
-	-- enterrada, porque a superfície do terreno está em y≈2. Agora é terreno
-	-- pintado e nivelado, em blocos sobrepostos pra borda não sair de régua.
+	-- terra batida mesmo, em blocos sobrepostos pra borda não sair de régua.
 	for i = 0, 11 do
 		local zz = z - 12 - i * 11
 		Build.paintGround(
@@ -262,12 +380,12 @@ end
 function Walls.build(config: Config?)
 	local k = cfg(config)
 	local N = k.segments
-	local gateArc = 0.055 -- fração da volta ocupada pelo portão
 
 	for i = 0, N - 1 do
 		local t0, t1 = i / N, (i + 1) / N
 		local tMid = (t0 + t1) / 2
-		if tDist(tMid, k.gateT) > gateArc then
+		-- abre a muralha SÓ onde a portaria realmente cobre (ver insideGate)
+		if not insideGate(pointAt(tMid, k)) then
 			local p0, p1 = pointAt(t0, k), pointAt(t1, k)
 			local dir = p1 - p0
 			local len = dir.Magnitude + 1.2 -- sobreposição: sem fresta entre trechos
@@ -277,30 +395,41 @@ function Walls.build(config: Config?)
 			local flat = CFrame.lookAt(mid, mid + dir.Unit)
 			local outward = mid.Unit
 
+			-- Espessura alternada por um fio. Os trechos se sobrepoem 1,2 pra nao
+			-- abrir fresta, e com a MESMA espessura as faces laterais dos dois ficam
+			-- exatamente no mesmo plano: o renderizador nao tem como decidir qual
+			-- esta na frente e sai uma listra que pisca em cada emenda. 0,06 de
+			-- diferenca resolve e e invisivel.
+			local eps = (i % 2) * 0.06
+
 			-- corpo
 			Build.part({
-				Size = Vector3.new(BODY_T, h, len),
+				Size = Vector3.new(BODY_T + eps, h, len),
 				CFrame = flat * CFrame.new(0, h / 2, 0),
 				Color = Build.tint((i % 3 == 0) and C.STONE_DARK or C.STONE, 0.05),
 				Material = Enum.Material.Cobblestone,
 			})
 			-- talude: mais largo e escuro, planta a muralha no chão
 			Build.part({
-				Size = Vector3.new(BODY_T + BATTER_OUT * 2, BATTER_H, len),
+				Size = Vector3.new(BODY_T + BATTER_OUT * 2 + eps, BATTER_H, len),
 				CFrame = flat * CFrame.new(0, BATTER_H / 2, 0),
 				Color = Build.tint(C.STONE_DARK, 0.04),
 				Material = Enum.Material.Cobblestone,
 			})
 			-- friso saliente marcando o nível da passarela
 			Build.part({
-				Size = Vector3.new(BODY_T + CORNICE_OUT * 2, CORNICE_H, len),
+				Size = Vector3.new(BODY_T + CORNICE_OUT * 2 + eps, CORNICE_H, len),
 				CFrame = flat * CFrame.new(0, h - 0.7, 0),
 				Color = C.STONE_LIGHT,
 				Material = Enum.Material.Cobblestone,
 				CastShadow = false,
 			})
-			-- parapeito recortado
-			crenellate(flat, len, h)
+			-- Parapeito recortado. Usa o comprimento VERDADEIRO do trecho, e nao o
+			-- esticado: com o +1,2 de sobreposicao os merloes do fim de um trecho
+			-- caiam em cima dos do comeco do seguinte -- duas pecas identicas no
+			-- mesmo lugar, com tons sorteados diferentes, o que faz a emenda PISCAR
+			-- (z-fighting) em volta da muralha inteira.
+			crenellate(flat, dir.Magnitude, h)
 			-- Neve acumulada no pé, do lado de fora. Sem isso a muralha encosta na
 			-- planície numa linha reta e dura, e as duas parecem coisas separadas
 			-- empilhadas — não construção assentada num terreno.
@@ -329,8 +458,10 @@ function Walls.build(config: Config?)
 	local spots = { 0.02, 0.14, 0.235, 0.35, 0.46, 0.56, 0.655, 0.895, 0.965 }
 	local talls = { 16, 22, 12, 26, 14, 20, 11, 24, 15 }
 	for i, t in spots do
-		if tDist(t, k.gateT) > gateArc + 0.03 then
-			tower(pointAt(t, k), k, talls[i])
+		local p = pointAt(t, k)
+		-- nenhuma torre solta encostada na portaria
+		if not (p.Z < -100 and math.abs(p.X) < GATE_HALF + 30) then
+			tower(p, k, talls[i])
 		end
 	end
 

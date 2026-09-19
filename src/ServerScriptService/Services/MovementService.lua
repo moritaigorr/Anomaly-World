@@ -2,9 +2,11 @@
 -- MovementService.lua  (SERVIDOR)
 -- Toda a locomoção que o combate enxerga:
 --   · Esquiva (Q)     — custa stamina e concede i-frames
---   · Bloqueio        — anda devagar (peso do souls-like)
 --   · Corrida (Shift) — drena a MESMA stamina da esquiva enquanto você anda
---   · Regeneração de stamina e de guarda (posture)
+--   · Regeneração de stamina
+--
+-- O bloqueio (botão direito) foi REMOVIDO do jogo. Não existe mais estado de
+-- guarda, velocidade de guarda nem regeneração de posture aqui.
 --
 -- REGRA DESTE MÓDULO: ele é a ÚNICA autoridade que escreve Humanoid.WalkSpeed.
 -- Dois escritores = a velocidade "pula" sozinha e ninguém entende por quê. Era
@@ -23,7 +25,6 @@ local Net = require(ReplicatedStorage.Shared.Net)
 local PlayerState = require(script.Parent.PlayerState)
 
 local DashRequest = Net.get("DashRequest")
-local BlockRequest = Net.get("BlockRequest")
 local SprintRequest = Net.get("SprintRequest")
 
 local MovementService = {}
@@ -36,20 +37,18 @@ local function humanoidOf(player: Player): Humanoid?
 	return char:FindFirstChildOfClass("Humanoid") :: Humanoid?
 end
 
--- O ÚNICO ponto do jogo que escreve WalkSpeed. Prioridade: guarda > corrida > andar.
+-- O ÚNICO ponto do jogo que escreve WalkSpeed. Prioridade: montaria > corrida > andar.
 local function applyWalkSpeed(player: Player)
 	local s = PlayerState.get(player)
 	local hum = humanoidOf(player)
 	if not (s and hum) then
 		return
 	end
-	-- MONTADO tem prioridade sobre tudo: quem está no cavalo não está bloqueando
-	-- nem correndo — qualquer uma dessas ações já teria desmontado.
+	-- MONTADO tem prioridade: quem está no cavalo não está correndo — correr já
+	-- teria desmontado.
 	if s.mounted then
 		local m = MountData.get(s.mounted)
 		hum.WalkSpeed = m and m.speed or Constants.Move.Walk
-	elseif s.blocking then
-		hum.WalkSpeed = Constants.Move.Blocking
 	elseif s.sprinting then
 		hum.WalkSpeed = Constants.Sprint.Speed
 	else
@@ -57,11 +56,10 @@ local function applyWalkSpeed(player: Player)
 	end
 end
 
--- não corre atordoado, de guarda alta, nem sem fôlego. O mínimo de stamina
--- existe pra não deixar a corrida engasgar (liga/desliga a cada meio segundo).
+-- não corre atordoado nem sem fôlego. O mínimo de stamina existe pra não deixar
+-- a corrida engasgar (liga/desliga a cada meio segundo).
 local function canStartSprint(s: PlayerState.State): boolean
-	return not s.blocking
-		and not s.mounted -- a montaria já tem a velocidade dela
+	return not s.mounted -- a montaria já tem a velocidade dela
 		and os.clock() >= s.stunUntil
 		and s.stamina >= Constants.Sprint.MinToStart
 end
@@ -69,7 +67,7 @@ end
 -- Guardamos a INTENÇÃO (sprintHeld) separada do ESTADO (sprinting). Sem isso,
 -- pedir corrida sem fôlego era recusado e nunca mais voltava: o jogador ficava
 -- com Shift pressionado andando devagar, sem entender por quê. Com a intenção
--- guardada, o Heartbeat religa a corrida assim que o fôlego (ou a guarda) permite.
+-- guardada, o Heartbeat religa a corrida assim que o fôlego permite.
 -- Exportado porque o MountService precisa reaplicar a velocidade ao montar e ao
 -- desmontar. Ele CHAMA daqui em vez de escrever WalkSpeed por conta própria:
 -- este módulo continua sendo o dono único da propriedade, que é a regra que
@@ -92,25 +90,6 @@ local function onSprint(player: Player, down: unknown)
 	applyWalkSpeed(player)
 end
 
-local function onBlock(player: Player, down: unknown)
-	local s = PlayerState.get(player)
-	if not s then
-		return
-	end
-	if os.clock() < s.stunUntil then
-		return -- atordoado: não consegue levantar a guarda
-	end
-	if down == true and not s.blocking then
-		s.blockStart = os.clock() -- inicia a janela de parry
-	end
-	s.blocking = down == true
-	if s.blocking then
-		s.sprinting = false -- levantar a guarda cancela a corrida
-	end
-
-	applyWalkSpeed(player)
-end
-
 local function onDash(player: Player, direction: Vector3?)
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -121,7 +100,7 @@ local function onDash(player: Player, direction: Vector3?)
 
 	local now = os.clock()
 	if now < s.stunUntil then
-		return -- guarda quebrada: não pode esquivar
+		return -- atordoado: não pode esquivar
 	end
 	if now < s.dashCdUntil or s.stamina < Constants.Dash.StaminaCost then
 		return
@@ -137,7 +116,6 @@ end
 
 function MovementService.Start()
 	DashRequest.OnServerEvent:Connect(onDash)
-	BlockRequest.OnServerEvent:Connect(onBlock)
 	SprintRequest.OnServerEvent:Connect(onSprint)
 
 	-- personagem novo nasce com o WalkSpeed padrão do Roblox; aqui garantimos que
@@ -153,9 +131,8 @@ function MovementService.Start()
 		applyWalkSpeed(player)
 	end
 
-	-- stamina e guarda
+	-- stamina
 	RunService.Heartbeat:Connect(function(dt)
-		local now = os.clock()
 		for _, player in Players:GetPlayers() do
 			local s = PlayerState.get(player)
 			if s then
@@ -165,7 +142,7 @@ function MovementService.Start()
 				local moving = hum ~= nil and hum.MoveDirection.Magnitude > 0
 
 				-- Shift ainda pressionado: a corrida volta sozinha quando o fôlego
-				-- se recupera ou a guarda desce. Ninguém deveria martelar a tecla.
+				-- se recupera. Ninguém deveria martelar a tecla.
 				if s.sprintHeld and not s.sprinting and canStartSprint(s) then
 					s.sprinting = true
 					applyWalkSpeed(player)
@@ -182,14 +159,6 @@ function MovementService.Start()
 					s.stamina = math.min(
 						Constants.Player.MaxStamina,
 						s.stamina + Constants.Player.StaminaRegenPerSec * dt
-					)
-				end
-
-				-- guarda (posture) volta quando você para de apanhar
-				if now - s.postureHitAt >= Constants.Posture.RegenDelay then
-					s.posture = math.min(
-						Constants.Posture.Max,
-						s.posture + Constants.Posture.RegenPerSec * dt
 					)
 				end
 			end

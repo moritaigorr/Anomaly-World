@@ -22,3 +22,9 @@ wally.lock
 Thumbs.db
 .vscode/*
 !.vscode/settings.json
+
+# artefato de sincronizacao local com o Studio (gerado, nao versionar)
+sync_manifest.json
+
+# definicoes do selene para a API da Roblox (geradas por "selene generate-roblox-std")
+roblox.yml

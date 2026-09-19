@@ -13,7 +13,6 @@ local Net = require(ReplicatedStorage.Shared.Net)
 local AttackRequest = Net.get("AttackRequest")
 local DashRequest = Net.get("DashRequest")
 local PowerRequest = Net.get("PowerRequest")
-local BlockRequest = Net.get("BlockRequest")
 local HeavyRequest = Net.get("HeavyRequest")
 local UltimateRequest = Net.get("UltimateRequest")
 local SwapCoreRequest = Net.get("SwapCoreRequest")
@@ -66,12 +65,6 @@ function InputController.Start(deps)
 		if input.UserInputType == Enum.UserInputType.MouseButton1
 			or input.UserInputType == Enum.UserInputType.Touch then
 			attack()
-		elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
-			-- segurar botão direito = bloquear (tap no tempo certo = parry)
-			BlockRequest:FireServer(true)
-			if CombatController then
-				CombatController.setBlocking(true) -- escudo visual
-			end
 		elseif input.KeyCode == Enum.KeyCode.H then
 			-- montar/desmontar. Só pedimos: quem decide (e valida se dá pra
 			-- montar caindo, atordoado ou morto) é o MountService.
@@ -83,7 +76,7 @@ function InputController.Start(deps)
 				HudController.toggleDatabase() -- Anomaly Database
 			end
 		elseif input.KeyCode == Enum.KeyCode.F then
-			-- ataque pesado: quebra a guarda do inimigo
+			-- ataque pesado: quebra a guarda do INIMIGO (o jogador não tem mais)
 			HeavyRequest:FireServer()
 			if AnimController then
 				AnimController.play("heavy")
@@ -129,14 +122,11 @@ function InputController.Start(deps)
 		end
 	end)
 
-	-- soltar o botão direito para de bloquear
+	-- O BOTÃO DIREITO NÃO FAZ MAIS NADA: bloqueio e parry saíram do jogo. Não
+	-- capturamos MouseButton2 aqui de propósito — sem handler, o botão fica livre
+	-- pra câmera do Roblox, que é o comportamento padrão esperado.
 	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton2 then
-			BlockRequest:FireServer(false)
-			if CombatController then
-				CombatController.setBlocking(false)
-			end
-		elseif input.KeyCode == Enum.KeyCode.LeftShift
+		if input.KeyCode == Enum.KeyCode.LeftShift
 			or input.KeyCode == Enum.KeyCode.RightShift then
 			SprintRequest:FireServer(false)
 		end
@@ -144,7 +134,7 @@ function InputController.Start(deps)
 
 	print(
 		"[InputController] pronto — M1 leve · F pesado · G ultimate · Q esquiva · "
-			.. "Shift corre · H montaria · botão direito bloqueia/parry · Z/X/C/V poderes · R lock-on"
+			.. "Shift corre · H montaria · Z/X/C/V poderes · R lock-on"
 	)
 end
 

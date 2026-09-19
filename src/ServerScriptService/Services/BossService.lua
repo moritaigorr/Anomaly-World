@@ -168,6 +168,7 @@ local function spawnBoss()
 	bb.Size = UDim2.fromScale(10, 1.2)
 	bb.StudsOffset = Vector3.new(0, 7, 0)
 	bb.AlwaysOnTop = true
+	bb.MaxDistance = 220 -- o boss é marco de arena: some de longe, não some perto
 	bb.Parent = hrp
 	local bg = Instance.new("Frame")
 	bg.Size = UDim2.fromScale(1, 0.5)

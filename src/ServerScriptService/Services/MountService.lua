@@ -487,12 +487,6 @@ function MountService.Start()
 			MountService.breakOnAction(player)
 		end)
 	end
-	Net.get("BlockRequest").OnServerEvent:Connect(function(player, down)
-		if down == true then
-			MountService.breakOnAction(player)
-		end
-	end)
-
 	Players.PlayerRemoving:Connect(function(player)
 		local entry = active[player]
 		if entry then

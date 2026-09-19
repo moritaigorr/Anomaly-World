@@ -156,16 +156,32 @@ local function vendorNPC(cf: CFrame, v: Vendor): Model
 	model.PrimaryPart = torso
 
 	-- placa com nome e ofício, pra achar o vendedor certo de longe
+	-- PLACA DO VENDEDOR.
+	-- MaxDistance era 90: com sete vendedores em volta de uma praça de raio 52,
+	-- de qualquer ponto dela apareciam cinco ou seis placas ao mesmo tempo,
+	-- empilhadas umas por cima das outras e cortadas pela borda da tela — viravam
+	-- fragmentos ilegíveis tipo "#ANOS" e "Grossa". 38 studs é mais ou menos o
+	-- alcance em que você ainda vai falar com o sujeito: lê uma de cada vez.
 	local tag = Instance.new("BillboardGui")
 	tag.Name = "Placa"
-	tag.Size = UDim2.new(0, 210, 0, 42)
+	tag.Size = UDim2.new(0, 190, 0, 40)
 	tag.StudsOffsetWorldSpace = Vector3.new(0, 3.4, 0)
 	tag.AlwaysOnTop = false
-	tag.MaxDistance = 90
+	tag.MaxDistance = 38
 	tag.Parent = torso
 
+	-- fundo escuro: texto claro sobre neve branca não tem contraste nenhum
+	local fundo = Instance.new("Frame")
+	fundo.Size = UDim2.fromScale(1, 1)
+	fundo.BackgroundColor3 = Color3.fromRGB(14, 16, 19)
+	fundo.BackgroundTransparency = 0.35
+	fundo.BorderSizePixel = 0
+	fundo.Parent = tag
+	Instance.new("UICorner", fundo).CornerRadius = UDim.new(0, 6)
+
 	local role = Instance.new("TextLabel")
-	role.Size = UDim2.new(1, 0, 0.44, 0)
+	role.Size = UDim2.new(1, -8, 0.42, 0)
+	role.Position = UDim2.new(0, 4, 0, 1)
 	role.BackgroundTransparency = 1
 	role.Font = Enum.Font.Code
 	role.Text = v.papel
@@ -174,8 +190,8 @@ local function vendorNPC(cf: CFrame, v: Vendor): Model
 	role.Parent = tag
 
 	local name = Instance.new("TextLabel")
-	name.Size = UDim2.new(1, 0, 0.56, 0)
-	name.Position = UDim2.new(0, 0, 0.44, 0)
+	name.Size = UDim2.new(1, -8, 0.52, 0)
+	name.Position = UDim2.new(0, 4, 0.44, 0)
 	name.BackgroundTransparency = 1
 	name.Font = Enum.Font.GothamMedium
 	name.Text = v.nome

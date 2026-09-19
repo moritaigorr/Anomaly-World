@@ -69,6 +69,43 @@ function Terra.build()
 	-- Antes havia um único anel a 370 studs e dava pra ver a planície acabar num
 	-- corte reto atrás dele. Agora uma faixa próxima (relevo) e outra distante e
 	-- bem alta (parede de horizonte) escondem a borda do mundo.
+	-- MACIÇO.
+	--
+	-- O QUE ESTAVA ERRADO: cada montanha era UMA FillBall. Uma esfera enterrada
+	-- pela metade é um domo — perfeitamente redondo, sem crista, sem vertente,
+	-- sem cume. Vinte domos brancos em volta do mapa não leem como cordilheira,
+	-- leem como bolas, que é exatamente o que eram.
+	--
+	-- Um maciço de verdade tem uma CRISTA (um eixo), cume no meio, ombros caindo
+	-- pras pontas e contorno irregular. Aqui isso sai de 5 a 8 bolas distribuídas
+	-- ao longo de um eixo sorteado: o raio cai nas extremidades, a altura sobe no
+	-- centro, e cada bola leva um desvio lateral pra silhueta não ficar simétrica.
+	-- A neve só entra acima de uma cota, então aparece a linha de neve em vez de
+	-- uma casquinha branca no topo de cada bola.
+	local function massif(cx: number, cz: number, r: number, alt: number)
+		local eixo = math.random() * math.pi
+		local n = 5 + math.random(3)
+		for i = 1, n do
+			local t = (i - 1) / (n - 1) - 0.5 -- -0.5 .. 0.5 ao longo da crista
+			local d = t * r * 1.8
+			local desvio = (math.random() - 0.5) * r * 0.4
+			local x = cx + math.cos(eixo) * d - math.sin(eixo) * desvio
+			local z = cz + math.sin(eixo) * d + math.cos(eixo) * desvio
+			-- raio maior no centro da crista, menor nas pontas
+			local rr = r * (0.5 + 0.5 * (1 - math.abs(t) * 2) ^ 0.7) * (0.82 + math.random() * 0.36)
+			local sobe = alt * (1 - math.abs(t) * 1.5) + (math.random() - 0.5) * alt * 0.18
+			Terrain:FillBall(Vector3.new(x, GROUND_TOP - rr * 0.45 + sobe, z), rr, Enum.Material.Rock)
+			-- linha de neve: só o que passa da cota, e não a tampa de cada bola
+			if sobe > alt * 0.30 then
+				Terrain:FillBall(
+					Vector3.new(x, GROUND_TOP + rr * 0.34 + sobe, z),
+					rr * (0.36 + math.random() * 0.16),
+					Enum.Material.Snow
+				)
+			end
+		end
+	end
+
 	local function ridge(count: number, distMin: number, distSpan: number, rMin: number, rSpan: number)
 		for i = 1, count do
 			local ang = (i / count) * math.pi * 2 + math.random() * 0.15
@@ -76,8 +113,7 @@ function Terra.build()
 				local dist = distMin + math.random() * distSpan
 				local x, z = math.cos(ang) * dist, math.sin(ang) * dist
 				local r = rMin + math.random() * rSpan
-				Terrain:FillBall(Vector3.new(x, GROUND_TOP - r * 0.40, z), r, Enum.Material.Rock)
-				Terrain:FillBall(Vector3.new(x, GROUND_TOP + r * 0.32, z), r * 0.48, Enum.Material.Snow)
+				massif(x, z, r, r * 0.55)
 			end
 		end
 	end
@@ -113,8 +149,19 @@ function Terra.build()
 		local z = (math.random() - 0.5) * PLAIN * 0.86
 		if not blocked(x, z) then
 			local r = 9 + math.random() * 20
-			Terrain:FillBall(Vector3.new(x, GROUND_TOP - r * 0.55, z), r, Enum.Material.Rock)
-			Terrain:FillBall(Vector3.new(x, GROUND_TOP - r * 0.15, z), r * 0.62, Enum.Material.Snow)
+			-- afloramento também é rocha quebrada, não bola: três lóbulos
+			-- desalinhados dão aresta e sombra onde antes havia um ovo liso.
+			local eixo = math.random() * math.pi
+			for j = -1, 1 do
+				local dd = j * r * 0.55
+				local rr = r * (j == 0 and 1 or 0.62) * (0.85 + math.random() * 0.3)
+				Terrain:FillBall(
+					Vector3.new(x + math.cos(eixo) * dd, GROUND_TOP - rr * 0.55, z + math.sin(eixo) * dd),
+					rr,
+					Enum.Material.Rock
+				)
+			end
+			Terrain:FillBall(Vector3.new(x, GROUND_TOP - r * 0.15, z), r * 0.5, Enum.Material.Snow)
 		end
 	end
 

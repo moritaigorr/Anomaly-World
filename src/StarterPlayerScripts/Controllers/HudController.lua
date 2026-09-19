@@ -22,7 +22,7 @@ local HudController = {}
 local KEYS = { "Z", "X", "C", "V" }
 local pips: { [string]: { fill: Frame, label: TextLabel, cd: TextLabel } } = {}
 local hpFill: Frame, staminaFill: Frame, moneyLabel: TextLabel
-local postureFill: Frame, ultFill: Frame
+local ultFill: Frame
 local coreLabel: TextLabel
 local dbFrame: Frame
 local dbRows: { [string]: TextLabel } = {}
@@ -71,10 +71,11 @@ function HudController.Start()
 	barsHolder.Position = UDim2.new(0, 24, 1, -190)
 	barsHolder.BackgroundTransparency = 1
 	barsHolder.Parent = gui
+	-- A barra GUARDA saiu junto com o bloqueio: a posture do jogador nao existe
+	-- mais, e barra que nunca se move e pior que barra nenhuma.
 	hpFill = bar(barsHolder, 0, Color3.fromRGB(210, 70, 70), "HP")
 	staminaFill = bar(barsHolder, 26, AMBER, "STAMINA")
-	postureFill = bar(barsHolder, 52, Color3.fromRGB(120, 200, 255), "GUARDA")
-	ultFill = bar(barsHolder, 78, Color3.fromRGB(168, 136, 240), "ULTIMATE [G]")
+	ultFill = bar(barsHolder, 52, Color3.fromRGB(168, 136, 240), "ULTIMATE [G]")
 
 	moneyLabel = Instance.new("TextLabel")
 	moneyLabel.Size = UDim2.new(0, 260, 0, 18)
@@ -200,12 +201,6 @@ function HudController.Start()
 	StateUpdate.OnClientEvent:Connect(function(data)
 		hpFill.Size = UDim2.fromScale(math.clamp(data.hp / data.maxHp, 0, 1), 1)
 		staminaFill.Size = UDim2.fromScale(math.clamp(data.stamina / data.maxStamina, 0, 1), 1)
-		if data.maxPosture then
-			postureFill.Size = UDim2.fromScale(math.clamp(data.posture / data.maxPosture, 0, 1), 1)
-			-- guarda quebrada: barra fica vermelha
-			postureFill.BackgroundColor3 = data.stunned and Color3.fromRGB(220, 60, 60)
-				or Color3.fromRGB(120, 200, 255)
-		end
 		if data.maxUlt then
 			local frac = math.clamp(data.ult / data.maxUlt, 0, 1)
 			ultFill.Size = UDim2.fromScale(frac, 1)
