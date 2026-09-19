@@ -19,11 +19,30 @@
 -- terreno, e a resposta ao input continua sendo a mesma do jogo a pé, que já
 -- está afinada. O cavaleiro sobe via HipHeight e o corpo do cavalo é encaixado
 -- por baixo, na altura exata do chão.
+--
+-- POR QUE MOTOR6D E NÃO SÓ SOLDA. A primeira versão soldava TUDO num bloco
+-- rígido: o cavalo deslizava de pernas duras enquanto o boneco fazia a animação
+-- de caminhada em cima. Lia como teletransporte, porque era — nada no cavalo se
+-- movia. Agora o corpo é uma árvore de juntas (quadris, joelhos, pescoço, cauda,
+-- tronco) e quem anima é o CLIENTE, em MountController, a 60 fps e de graça pro
+-- servidor. O servidor constrói o esqueleto; o cliente faz ele galopar.
+--
+-- E O CAVALEIRO. Sem animação publicada (AnimData está todo vazio) não dá pra
+-- "tocar" uma pose de montaria. Então a pose é feita na mão, girando o repouso
+-- das juntas do R15 — o que replica pra todo mundo — e o script Animate padrão
+-- é desligado pra não sobrescrever. Ao desmontar, tudo volta ao valor guardado.
+--
+-- DOIS FORMATOS DE RIG. O avatar novo da Roblox não usa mais Motor6D: as juntas
+-- são AnimationConstraint, com o repouso morando no Attachment0 (do membro PAI)
+-- e o Transform reservado pra animação. Os nomes das juntas são os mesmos, então
+-- a tabela de pose serve pros dois — só muda ONDE se escreve. Procurar só por
+-- Motor6D achava zero juntas e a pose não fazia absolutamente nada: o cavaleiro
+-- ficava de pernas retas, enfiadas dentro do barril.
 
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Constants = require(ReplicatedStorage.Shared.Constants)
 local MountData = require(ReplicatedStorage.Shared.MountData)
 local Net = require(ReplicatedStorage.Shared.Net)
 local MovementService = require(script.Parent.MovementService)
@@ -35,6 +54,7 @@ local CombatFeedback = Net.get("CombatFeedback")
 local MountService = {}
 
 local MOUNT_COOLDOWN = 1.0 -- evita ligar/desligar em spam
+local TAG = "Montaria" -- como o cliente acha as montarias pra animar
 
 -- =============================================================== CORPO
 -- Cavalo estilizado. A silhueta é o que importa: dorso longo, pescoço em
@@ -85,69 +105,120 @@ local function buildSteed(m: MountData.Mount, rootCF: CFrame): (Model, Part)
 		return piece(model, Vector3.new(w, h, (B - A).Magnitude), CFrame.lookAt((A + B) / 2, B), color, material)
 	end
 
+	-- JUNTA. C0 e C1 saem do CFrame atual das duas peças, então criar a junta
+	-- não move nada: ela nasce exatamente na pose montada. Girar o Transform
+	-- depois gira a peça em torno do pivô, e o pivô herda a orientação do cavalo
+	-- (X = lado, Y = cima, Z = garupa) — girar em X é sempre passada pra frente.
+	local function joint(name: string, p0: BasePart, p1: BasePart, pivot: CFrame): Motor6D
+		local j = Instance.new("Motor6D")
+		j.Name = name
+		j.Part0 = p0
+		j.Part1 = p1
+		j.C0 = p0.CFrame:Inverse() * pivot
+		j.C1 = p1.CFrame:Inverse() * pivot
+		j.Parent = p0
+		return j
+	end
+
+	-- peças que acompanham rigidamente um segmento articulado
+	local rigid: { [BasePart]: { BasePart } } = {}
+	local function tie(seg: BasePart, p: BasePart): BasePart
+		local list = rigid[seg]
+		if not list then
+			list = {}
+			rigid[seg] = list
+		end
+		table.insert(list, p)
+		return p
+	end
+
 	-- BARRIL: fundo e estreito. A primeira versão era 3x3 e lia como caixa marrom.
-	piece(model, Vector3.new(2.5, 2.4, L * 0.86), at(0, BACK - 1.2, 0), m.corpo, Enum.Material.SmoothPlastic)
-	piece(model, Vector3.new(2.6, 2.6, L * 0.26), at(0, BACK - 1.15, -L * 0.34), m.corpo, Enum.Material.SmoothPlastic)
-	piece(model, Vector3.new(2.5, 2.5, L * 0.24), at(0, BACK - 1.05, L * 0.34), m.corpo, Enum.Material.SmoothPlastic)
+	-- O barril é o TRONCO — tudo que não articula pendura nele, e ele mesmo
+	-- articula na raiz pra poder subir e descer no galope.
+	local body = piece(model, Vector3.new(2.2, 2.4, L * 0.86), at(0, BACK - 1.2, 0), m.corpo, Enum.Material.SmoothPlastic)
+	body.Name = "Body"
+	joint("Body", root, body, at(0, BACK - 1.2, 0))
 
-	-- PESCOÇO e CABEÇA
+	tie(body, piece(model, Vector3.new(2.3, 2.5, L * 0.26), at(0, BACK - 1.15, -L * 0.34), m.corpo, Enum.Material.SmoothPlastic))
+	tie(body, piece(model, Vector3.new(2.25, 2.4, L * 0.24), at(0, BACK - 1.05, L * 0.34), m.corpo, Enum.Material.SmoothPlastic))
+
+	-- PESCOÇO e CABEÇA — um segmento só, articulado na base
 	local neckBase = Vector3.new(0, BACK - 0.15, -L * 0.31)
-	local neckTop = Vector3.new(0, BACK + 2.35, -L * 0.5)
-	limb(neckBase, neckTop, 1.45, 1.6, m.corpo, Enum.Material.SmoothPlastic)
+	local neckTop = Vector3.new(0, BACK + 2.95, -L * 0.54)
+	local neck = limb(neckBase, neckTop, 1.45, 1.6, m.corpo, Enum.Material.SmoothPlastic)
+	neck.Name = "Neck"
+	joint("Neck", body, neck, at(neckBase.X, neckBase.Y, neckBase.Z))
 
-	local muzzle = Vector3.new(0, BACK + 1.5, -L * 0.75)
-	limb(neckTop + Vector3.new(0, -0.15, 0), muzzle, 1.15, 1.25, m.corpo, Enum.Material.SmoothPlastic)
+	local muzzle = Vector3.new(0, BACK + 1.85, -L * 0.86)
+	tie(neck, limb(neckTop + Vector3.new(0, -0.15, 0), muzzle, 1.15, 1.25, m.corpo, Enum.Material.SmoothPlastic))
 	local muzzleW = (rootCF * CFrame.new(muzzle)).Position
 	local headDir = (muzzleW - (rootCF * CFrame.new(neckTop)).Position).Unit
-	piece(model, Vector3.new(0.92, 0.88, 1.0), CFrame.lookAt(muzzleW, muzzleW + headDir), m.corpo, Enum.Material.SmoothPlastic)
-	piece(model, Vector3.new(1.22, 0.26, 0.7), CFrame.lookAt(muzzleW + headDir * -0.5, muzzleW + headDir), m.sela, Enum.Material.Fabric)
+	tie(neck, piece(model, Vector3.new(0.92, 0.88, 1.0), CFrame.lookAt(muzzleW, muzzleW + headDir), m.corpo, Enum.Material.SmoothPlastic))
+	tie(neck, piece(model, Vector3.new(1.22, 0.26, 0.7), CFrame.lookAt(muzzleW + headDir * -0.5, muzzleW + headDir), m.sela, Enum.Material.Fabric))
 	for _, sx in { -1, 1 } do
-		limb(neckTop + Vector3.new(sx * 0.36, 0.1, 0.25), neckTop + Vector3.new(sx * 0.44, 0.95, 0.45), 0.26, 0.26, m.corpo, Enum.Material.SmoothPlastic)
+		tie(neck, limb(neckTop + Vector3.new(sx * 0.36, 0.1, 0.25), neckTop + Vector3.new(sx * 0.44, 0.95, 0.45), 0.26, 0.26, m.corpo, Enum.Material.SmoothPlastic))
 	end
 	-- rédeas: do focinho até a mão do cavaleiro
 	for _, sx in { -1, 1 } do
-		limb(muzzle + Vector3.new(sx * 0.5, 0.1, 0), Vector3.new(sx * 0.6, BACK + 0.9, -0.6), 0.12, 0.12, m.sela, Enum.Material.Fabric)
+		tie(neck, limb(muzzle + Vector3.new(sx * 0.5, 0.1, 0), Vector3.new(sx * 0.6, BACK + 0.9, -0.6), 0.12, 0.12, m.sela, Enum.Material.Fabric))
 	end
 
 	-- CRINA ao longo da linha do pescoço
 	for i = 0, 5 do
 		local f = i / 5
 		local base = neckBase:Lerp(neckTop, 0.25 + f * 0.72)
-		limb(base + Vector3.new(0, 0.35, 0.28), base + Vector3.new(0, -0.55, 0.72), 0.24, 0.24, m.crina, Enum.Material.Fabric)
+		tie(neck, limb(base + Vector3.new(0, 0.35, 0.28), base + Vector3.new(0, -0.55, 0.72), 0.24, 0.24, m.crina, Enum.Material.Fabric))
 	end
 
 	-- CAUDA em duas partes: toco grosso na garupa e rabada caindo. Uma barra reta
-	-- e fina lia como TÁBUA PRETA espetada na traseira.
-	limb(Vector3.new(0, BACK - 0.3, L * 0.4), Vector3.new(0, BACK - 1.1, L * 0.56), 0.85, 0.85, m.crina, Enum.Material.Fabric)
-	limb(Vector3.new(0, BACK - 1.0, L * 0.55), Vector3.new(0, BACK - 3.3, L * 0.6), 0.95, 0.7, m.crina, Enum.Material.Fabric)
+	-- e fina lia como TÁBUA PRETA espetada na traseira. Articula pra balançar.
+	local tailBase = Vector3.new(0, BACK - 0.3, L * 0.4)
+	local tail = limb(tailBase, Vector3.new(0, BACK - 1.1, L * 0.56), 0.6, 0.6, m.crina, Enum.Material.Fabric)
+	tail.Name = "Tail"
+	joint("Tail", body, tail, at(tailBase.X, tailBase.Y, tailBase.Z))
+	tie(tail, limb(Vector3.new(0, BACK - 1.0, L * 0.55), Vector3.new(0, BACK - 3.3, L * 0.6), 0.52, 0.42, m.crina, Enum.Material.Fabric))
 
 	-- PERNAS longas: da barriga até o chão são ~2,2 studs de vão. Perna curta
-	-- fazia o cavalo ler como porco.
+	-- fazia o cavalo ler como porco. Cada perna é quadril + joelho, e é isso que
+	-- o cliente balança — sem elas o cavalo desliza de pernas duras.
 	for _, sx in { -1, 1 } do
 		for _, sz in { -1, 1 } do
 			local legZ = sz * L * 0.3
 			local back = sz > 0 and -0.18 or 0
-			piece(model, Vector3.new(0.9, 1.9, 1.1), at(sx * 0.95, BACK - 2.5, legZ), m.corpo, Enum.Material.SmoothPlastic)
-			piece(model, Vector3.new(0.6, 1.9, 0.6), at(sx * 0.95, BACK - 4.0, legZ + back), m.corpo, Enum.Material.SmoothPlastic)
-			piece(model, Vector3.new(0.78, 0.5, 0.9), at(sx * 0.95, BACK - 4.85, legZ + back), m.casco, Enum.Material.Slate)
+			local side = sx < 0 and "L" or "R"
+			local ends = sz < 0 and "F" or "B"
+
+			local upper = piece(model, Vector3.new(0.9, 1.9, 1.1), at(sx * 0.95, BACK - 2.5, legZ), m.corpo, Enum.Material.SmoothPlastic)
+			local lower = piece(model, Vector3.new(0.6, 1.9, 0.6), at(sx * 0.95, BACK - 4.0, legZ + back), m.corpo, Enum.Material.SmoothPlastic)
+			local hoof = piece(model, Vector3.new(0.78, 0.5, 0.9), at(sx * 0.95, BACK - 4.85, legZ + back), m.casco, Enum.Material.Slate)
+			upper.Name = "Upper" .. side .. ends
+			lower.Name = "Lower" .. side .. ends
+
+			-- pivô do quadril no TOPO da coxa, joelho na junção coxa/canela
+			joint("Hip" .. side .. ends, body, upper, at(sx * 0.95, BACK - 1.55, legZ))
+			joint("Knee" .. side .. ends, upper, lower, at(sx * 0.95, BACK - 3.15, legZ + back * 0.5))
+			tie(lower, hoof)
 		end
 	end
 
 	-- SELA e manta
-	piece(model, Vector3.new(2.8, 0.28, 3.0), at(0, BACK + 0.14, 0.1), m.manta, Enum.Material.Fabric)
-	piece(model, Vector3.new(2.2, 0.55, 2.3), at(0, BACK + 0.42, 0.1), m.sela, Enum.Material.Fabric)
-	piece(model, Vector3.new(2.3, 0.8, 0.42), at(0, BACK + 0.75, 1.25), m.sela, Enum.Material.Fabric)
-	piece(model, Vector3.new(1.9, 0.6, 0.36), at(0, BACK + 0.68, -1.05), m.sela, Enum.Material.Fabric)
+	tie(body, piece(model, Vector3.new(2.5, 0.28, 3.0), at(0, BACK + 0.14, 0.1), m.manta, Enum.Material.Fabric))
+	tie(body, piece(model, Vector3.new(2.0, 0.55, 2.3), at(0, BACK + 0.42, 0.1), m.sela, Enum.Material.Fabric))
+	tie(body, piece(model, Vector3.new(2.1, 0.8, 0.42), at(0, BACK + 0.75, 1.25), m.sela, Enum.Material.Fabric))
+	tie(body, piece(model, Vector3.new(1.75, 0.6, 0.36), at(0, BACK + 0.68, -1.05), m.sela, Enum.Material.Fabric))
+	-- estribo onde o pé REALMENTE cai depois do afastamento de 38 graus
 	for _, sx in { -1, 1 } do
-		piece(model, Vector3.new(0.12, 1.3, 0.12), at(sx * 1.2, BACK - 0.5, 0.1), m.sela, Enum.Material.Fabric)
-		piece(model, Vector3.new(0.6, 0.16, 0.45), at(sx * 1.2, BACK - 1.2, 0.1), m.casco, Enum.Material.Metal)
+		tie(body, piece(model, Vector3.new(0.12, 1.3, 0.12), at(sx * 1.45, BACK - 0.5, 0.1), m.sela, Enum.Material.Fabric))
+		tie(body, piece(model, Vector3.new(0.6, 0.16, 0.45), at(sx * 1.45, BACK - 1.2, 0.1), m.casco, Enum.Material.Metal))
 	end
 
 	-- anomalia: Neon em PONTO, nunca em bloco
 	if m.brilho then
 		for _, sx in { -1, 1 } do
-			local eye = piece(model, Vector3.new(0.2, 0.2, 0.2), CFrame.new(muzzleW) * CFrame.new(sx * 0.5, 0.4, 0.6), m.brilho, Enum.Material.Neon)
-			eye.Shape = Enum.PartType.Ball
+			local eye = tie(neck, piece(model, Vector3.new(0.2, 0.2, 0.2), CFrame.new(muzzleW) * CFrame.new(sx * 0.5, 0.4, 0.6), m.brilho, Enum.Material.Neon))
+			if eye:IsA("Part") then
+				eye.Shape = Enum.PartType.Ball
+			end
 		end
 		local aura = Instance.new("ParticleEmitter")
 		aura.Rate = 9
@@ -162,17 +233,100 @@ local function buildSteed(m: MountData.Mount, rootCF: CFrame): (Model, Part)
 		aura.Parent = root
 	end
 
-	-- solda tudo na raiz: um corpo rígido só
-	for _, d in model:GetDescendants() do
-		if d:IsA("BasePart") and d ~= root then
+	-- solda o que não articula no seu segmento
+	for seg, list in rigid do
+		for _, p in list do
 			local w = Instance.new("WeldConstraint")
-			w.Part0 = root
-			w.Part1 = d
-			w.Parent = root
+			w.Part0 = seg
+			w.Part1 = p
+			w.Parent = seg
 		end
 	end
 
 	return model, root
+end
+
+-- =============================================================== CAVALEIRO
+-- Pose de montaria à mão. Sem animação publicada, girar o C0 é o único jeito de
+-- posar o R15 de um jeito que TODO MUNDO veja (C0 replica; Transform não).
+-- Convenção do R15 já em T-pose: X é o lado, Y é cima, Z é a garupa. Girar +X
+-- joga o membro pra FRENTE, girar -X pra trás.
+local POSE: { [string]: CFrame } = {
+	Waist = CFrame.Angles(math.rad(-10), 0, 0), -- tronco inclina à frente
+	Neck = CFrame.Angles(math.rad(8), 0, 0), -- e a cabeça compensa, olhando o horizonte
+
+	-- coxas à frente e ABERTAS: o cavaleiro escarrancha o barril (2,5 de largura)
+	LeftHip = CFrame.Angles(math.rad(44), 0, math.rad(-38)),
+	RightHip = CFrame.Angles(math.rad(44), 0, math.rad(38)),
+	LeftKnee = CFrame.Angles(math.rad(-52), 0, 0), -- canela cai reta pro estribo
+	RightKnee = CFrame.Angles(math.rad(-52), 0, 0),
+	LeftAnkle = CFrame.Angles(math.rad(14), 0, 0),
+	RightAnkle = CFrame.Angles(math.rad(14), 0, 0),
+
+	-- braços à frente, cotovelo dobrado: mãos na altura das rédeas
+	LeftShoulder = CFrame.Angles(math.rad(50), 0, math.rad(12)),
+	RightShoulder = CFrame.Angles(math.rad(50), 0, math.rad(-12)),
+	LeftElbow = CFrame.Angles(math.rad(28), 0, 0),
+	RightElbow = CFrame.Angles(math.rad(28), 0, 0),
+}
+
+-- Aplica (ou desfaz) uma rotação no repouso de uma junta, guardando o valor
+-- original no próprio objeto. Se o jogador morrer montado, o personagem novo
+-- nasce com juntas novas e limpas — nada fica torto.
+local function girarRepouso(alvo: Instance, ler: () -> CFrame, escrever: (CFrame) -> (), rot: CFrame, on: boolean)
+	if on then
+		if alvo:GetAttribute("MountBase") == nil then
+			alvo:SetAttribute("MountBase", ler())
+		end
+		escrever((alvo:GetAttribute("MountBase") :: CFrame) * rot)
+	else
+		local base = alvo:GetAttribute("MountBase")
+		if base then
+			escrever(base :: CFrame)
+			alvo:SetAttribute("MountBase", nil)
+		end
+	end
+end
+
+local function poseRider(char: Model, on: boolean)
+	local posadas = 0
+	for _, d in char:GetDescendants() do
+		local rot = POSE[d.Name]
+		if rot then
+			if d:IsA("Motor6D") then
+				local j = d :: Motor6D
+				girarRepouso(j, function()
+					return j.C0
+				end, function(cf)
+					j.C0 = cf
+				end, rot, on)
+				posadas += 1
+			elseif d:IsA("AnimationConstraint") then
+				-- rig novo: o repouso mora no Attachment0, que fica no membro PAI
+				local a0 = (d :: AnimationConstraint).Attachment0
+				if a0 then
+					girarRepouso(a0, function()
+						return a0.CFrame
+					end, function(cf)
+						a0.CFrame = cf
+					end, rot, on)
+					posadas += 1
+				end
+			end
+		end
+	end
+	if on and posadas == 0 then
+		warn("[MountService] rig do cavaleiro sem juntas conhecidas — pose de montaria nao aplicada")
+	end
+
+	-- desliga o Animate: senão a animação de caminhada continua rodando por cima
+	-- da pose e o boneco "anda" parado em cima do cavalo. Quem para as faixas já
+	-- tocando é o cliente (MountController) — só o dono do personagem consegue.
+	local animate = char:FindFirstChild("Animate")
+	if animate and animate:IsA("LocalScript") then
+		animate.Disabled = on
+	end
+	char:SetAttribute("Montado", on or nil)
 end
 
 -- =============================================================== ESTADO
@@ -194,6 +348,9 @@ function MountService.dismount(player: Player, reason: string?)
 	if hum then
 		hum.HipHeight = entry.baseHip
 		hum.JumpPower = 50
+	end
+	if char then
+		poseRider(char, false)
 	end
 	entry.model:Destroy()
 
@@ -217,7 +374,7 @@ local function mount(player: Player, id: string)
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
-	if not (s and hum and hrp) then
+	if not (s and hum and hrp and char) then
 		return
 	end
 
@@ -260,14 +417,29 @@ local function mount(player: Player, id: string)
 	local rootCF = hrp.CFrame * CFrame.new(0, groundOffset, 0)
 
 	local model, root = buildSteed(m, rootCF)
+
+	-- quem é o cavaleiro: o cliente usa isso pra calar os passos e parar as
+	-- animações do R15 montado
+	local rider = Instance.new("ObjectValue")
+	rider.Name = "Rider"
+	rider.Value = char
+	rider.Parent = model
+
+	-- POSA ANTES DE PUBLICAR O CAVALO. Desligar o Animate é o que faz a faixa de
+	-- caminhada parar; se o modelo chegasse primeiro, o cliente pararia as faixas
+	-- e o Animate — ainda vivo por um quadro — já teria religado a de andar.
+	hum.JumpPower = m.jump
+	poseRider(char, true)
+
+	-- marca ANTES de entrar no workspace: assim o modelo chega inteiro e já
+	-- etiquetado no cliente, e a animação começa no primeiro quadro
+	CollectionService:AddTag(model, TAG)
 	model.Parent = workspace
 
 	local weld = Instance.new("WeldConstraint")
 	weld.Part0 = hrp
 	weld.Part1 = root
 	weld.Parent = root
-
-	hum.JumpPower = m.jump
 
 	active[player] = { model = model, id = id, baseHip = baseHip, baseSpeed = baseSpeed }
 	s.mounted = id

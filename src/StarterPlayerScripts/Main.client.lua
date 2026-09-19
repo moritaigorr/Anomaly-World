@@ -8,11 +8,13 @@ local HudController = require(Controllers.HudController)
 local InputController = require(Controllers.InputController)
 local CameraController = require(Controllers.CameraController)
 local AnimController = require(Controllers.AnimController)
+local MountController = require(Controllers.MountController)
 
 CombatController.Start()
 HudController.Start()
 CameraController.Start()
 AnimController.Start()
+MountController.Start()
 InputController.Start({
 	CombatController = CombatController,
 	AnimController = AnimController,
