@@ -179,13 +179,19 @@ local function barrow()
 		return
 	end
 	local c = zone.center
-	Build.part({
-		Shape = Enum.PartType.Ball,
-		Size = Vector3.new(56, 26, 56),
-		CFrame = CFrame.new(c + Vector3.new(0, 2, 0)),
-		Color = C.SNOW,
-		Material = Enum.Material.Snow,
-	})
+	-- O MONTÍCULO ERA UMA BOLA. Part com Shape = Ball ignora escala não uniforme
+	-- e desenha ESFERA: pedir 56 x 26 x 56 dava um domo branco de 56 studs
+	-- plantado na planície, visível de longe como uma bola de golfe gigante.
+	-- Agora é a mesma malha de penhasco dos maciços, achatada e branca — tem
+	-- aresta, face e sombra, que é o que faz ler como terra amontoada.
+	if not Assets.spawnRelief(c, 58, 22, 54, math.random(0, 359), C.SNOW) then
+		Build.part({
+			Size = Vector3.new(50, 20, 50),
+			CFrame = CFrame.new(c + Vector3.new(0, 6, 0)),
+			Color = C.SNOW,
+			Material = Enum.Material.Snow,
+		})
+	end
 	for _, sx in { -1, 1 } do
 		Build.part({
 			Size = Vector3.new(3.5, 12, 3.5),
