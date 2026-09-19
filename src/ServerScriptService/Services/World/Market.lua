@@ -14,6 +14,7 @@
 --     brasa o dia inteiro. A neve sobra só na borda da praça.
 --   · varal de luzes ligando os postes: amarra a praça como um espaço só.
 
+local Assets = require(script.Parent.Assets)
 local Build = require(script.Parent.Build)
 local C = Build.C
 
@@ -259,7 +260,34 @@ local function stripedAwning(ridge: CFrame, width: number, slopeLen: number, a: 
 	})
 end
 
-local function stall(cf: CFrame, v: Vendor)
+-- BARRACA DE ASSET. Tres modelos diferentes revezando: praca com seis barracas
+-- identicas le como copiar-e-colar. Se o kit nao carregar, cai na barraca
+-- montada com primitivas logo abaixo, que continua valendo.
+local BARRACAS = { "BARRACA_A", "BARRACA_B", "BARRACA_C" }
+
+local function stallAsset(cf: CFrame, i: number): boolean
+	local nome = BARRACAS[((i - 1) % #BARRACAS) + 1]
+	local m = Assets.spawn(nome, cf.Position, math.deg(select(2, cf:ToOrientation())), 1, true)
+	if not m then
+		return false
+	end
+	-- caixotes encostados na lateral: mercadoria esperando a vez
+	for _, sx in { -1, 1 } do
+		if math.random() < 0.6 then
+			local at = cf * CFrame.new(sx * 7.5, 0, (math.random() - 0.5) * 4)
+			Assets.spawn(
+				(math.random() < 0.5) and "CAIXOTE" or "ENGRADADO",
+				Vector3.new(at.X, Build.groundY(at.X, at.Z, 1), at.Z),
+				math.random(0, 359),
+				1,
+				true
+			)
+		end
+	end
+	return true
+end
+
+local function stallPrimitivas(cf: CFrame, v: Vendor)
 	local W, D = 16, 11
 	-- Postes mais altos e cumeeira mais alta. Antes o beiral do toldo caía a 4
 	-- studs do chão — ABAIXO da cabeça do vendedor —, então de frente só se via
@@ -621,7 +649,10 @@ function Market.build(center: Vector3, radius: number)
 		local px, pz = center.X + math.cos(a) * ringR, center.Z + math.sin(a) * ringR
 		local p = Vector3.new(px, Build.groundY(px, pz, 2), pz)
 		-- a frente da barraca (+Z local) tem que olhar pro centro
-		stall(CFrame.lookAt(p, Vector3.new(center.X, p.Y, center.Z)), v)
+		local cfStall = CFrame.lookAt(p, Vector3.new(center.X, p.Y, center.Z))
+		if not stallAsset(cfStall, i) then
+			stallPrimitivas(cfStall, v)
+		end
 	end
 
 	for _, deg in LAMP_ANGLES do

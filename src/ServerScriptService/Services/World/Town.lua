@@ -746,6 +746,33 @@ local function buildKeep()
 	-- mesma correção de fundação das casas: y = 0 enterrava a base inteira
 	local c = Vector3.new(0, Build.GROUND_LEVEL - 0.5, Town.KEEP_Z)
 
+	-- SALÃO DO JARL. O corpo do salão é uma malha (paredes de tora, telhado de
+	-- tabuinha em camadas, alicerce de pedra) guardada em
+	-- ServerStorage._Construcoes. A plataforma, a escadaria e os braseiros em
+	-- volta continuam sendo construídos aqui, porque é o que amarra o salão ao
+	-- resto da praça. Sem o molde, segue tudo como era.
+	local moldes = game:GetService("ServerStorage"):FindFirstChild("_Construcoes")
+	local salao = moldes and moldes:FindFirstChild("salao")
+	if salao and salao:IsA("Model") then
+		Build.paintGround(c.X, Town.KEEP_Z + 4, 56, Enum.Material.Cobblestone)
+		local copia = salao:Clone()
+		local escala = 1.9
+		pcall(function()
+			copia:ScaleTo(escala)
+		end)
+		copia:PivotTo(CFrame.new(c.X, Build.GROUND_LEVEL + 8.2, Town.KEEP_Z + 12))
+		for _, d in copia:GetDescendants() do
+			if d:IsA("BasePart") then
+				d.Anchored = true
+				-- só o volume grande colide; detalhe de telhado não precisa
+				local maior = math.max(d.Size.X, d.Size.Y, d.Size.Z)
+				d.CanCollide = maior >= 3
+				d.CastShadow = maior >= 4
+			end
+		end
+		copia.Parent = Build.getRoot()
+	end
+
 	Build.part({
 		Size = Vector3.new(96, 9, 64),
 		CFrame = CFrame.new(c + Vector3.new(0, 4.5, 16)),

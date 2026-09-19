@@ -125,35 +125,64 @@ local function spawnBoss()
 		table.insert(decor, { part = part, offset = offset })
 	end
 
-	-- núcleo emissivo
-	local corePart = Instance.new("Part")
-	corePart.Shape = Enum.PartType.Ball
-	corePart.Size = Vector3.new(4, 4, 4)
-	corePart.Material = Enum.Material.Neon
-	corePart.Color = boss.trueFormColor
-	addDecor(corePart, CFrame.new(0, 0, 0))
+	-- ---------------- CORPO VISÍVEL ----------------
+	-- O boss era um NÚCLEO NEON de 4 studs com oito espinhos em volta e dois
+	-- olhos — uma bola espinhenta, não um rei morto-vivo. Agora vem de
+	-- ServerStorage._Criaturas.BOSS, uma malha gerada pra ele: coroa de ferro
+	-- enferrujado, peles reais sobre armadura enegrecida e espadão.
+	--
+	-- Mesmo arranjo das criaturas comuns: o corpo de colisão continua existindo
+	-- e vira invisível, então nada em combate, agro ou barra de vida muda. Sem
+	-- o molde (ele mora no arquivo do place, não no git), cai no visual antigo.
+	local moldes = game:GetService("ServerStorage"):FindFirstChild("_Criaturas")
+	local arte = moldes and moldes:FindFirstChild("BOSS")
 
-	-- espinhos ao redor
-	for i = 1, 8 do
-		local ang = (i / 8) * math.pi * 2
-		local spike = Instance.new("Part")
-		spike.Size = Vector3.new(1.2, 5, 1.2)
-		spike.Material = Enum.Material.SmoothPlastic
-		spike.Color = Color3.fromRGB(30, 15, 15)
-		addDecor(
-			spike,
-			CFrame.new(math.cos(ang) * 4, 0, math.sin(ang) * 4) * CFrame.Angles(math.rad(90), ang, 0)
-		)
-	end
+	if arte and arte:IsA("Model") then
+		hrp.Transparency = 1
+		local copia = arte:Clone()
+		local pivo = copia:GetPivot()
+		for _, d in copia:GetDescendants() do
+			if d:IsA("BasePart") then
+				addDecor(d, CFrame.new(0, -hrp.Size.Y / 2, 0) * (pivo:Inverse() * d.CFrame))
+			end
+		end
+		copia:Destroy()
+		-- a anomalia continua marcando presença, agora como brasa no peito
+		local brasa = Instance.new("Part")
+		brasa.Shape = Enum.PartType.Ball
+		brasa.Size = Vector3.new(1.1, 1.1, 1.1)
+		brasa.Material = Enum.Material.Neon
+		brasa.Color = boss.trueFormColor
+		addDecor(brasa, CFrame.new(0, 1.2, -1.4))
+	else
+		-- PLANO B: o visual antigo de núcleo e espinhos
+		local corePart = Instance.new("Part")
+		corePart.Shape = Enum.PartType.Ball
+		corePart.Size = Vector3.new(4, 4, 4)
+		corePart.Material = Enum.Material.Neon
+		corePart.Color = boss.trueFormColor
+		addDecor(corePart, CFrame.new(0, 0, 0))
 
-	-- dois olhos brilhantes
-	for _, side in { -2, 2 } do
-		local eye = Instance.new("Part")
-		eye.Shape = Enum.PartType.Ball
-		eye.Size = Vector3.new(1.4, 1.4, 1.4)
-		eye.Material = Enum.Material.Neon
-		eye.Color = Color3.fromRGB(255, 230, 120)
-		addDecor(eye, CFrame.new(side, 1.5, -3.4))
+		for i = 1, 8 do
+			local ang = (i / 8) * math.pi * 2
+			local spike = Instance.new("Part")
+			spike.Size = Vector3.new(1.2, 5, 1.2)
+			spike.Material = Enum.Material.SmoothPlastic
+			spike.Color = Color3.fromRGB(30, 15, 15)
+			addDecor(
+				spike,
+				CFrame.new(math.cos(ang) * 4, 0, math.sin(ang) * 4) * CFrame.Angles(math.rad(90), ang, 0)
+			)
+		end
+
+		for _, side in { -2, 2 } do
+			local eye = Instance.new("Part")
+			eye.Shape = Enum.PartType.Ball
+			eye.Size = Vector3.new(1.4, 1.4, 1.4)
+			eye.Material = Enum.Material.Neon
+			eye.Color = Color3.fromRGB(255, 230, 120)
+			addDecor(eye, CFrame.new(side, 1.5, -3.4))
+		end
 	end
 
 	local function updateDecor()

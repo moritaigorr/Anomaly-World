@@ -60,6 +60,16 @@ local CASA = 73888148623631
 Assets.catalog = {
 	PINE = { id = 8933272965, targetSize = 16 },
 
+	-- KIT DE MERCADO (90935751716804, "Medieval Market Pack"): tres barracas
+	-- diferentes, tres caixotes e um barril, todos em mesh com textura. Tres
+	-- modelos de barraca importam: praca com seis barracas IGUAIS denuncia
+	-- geracao automatica mais que qualquer outra coisa na cidade.
+	BARRACA_A = { id = 90935751716804, child = "StallA", targetSize = 15 },
+	BARRACA_B = { id = 90935751716804, child = "StallB", targetSize = 15 },
+	BARRACA_C = { id = 90935751716804, child = "StallC", targetSize = 17 },
+	CAIXOTE = { id = 90935751716804, child = "BoxA", targetSize = 4.6 },
+	ENGRADADO = { id = 90935751716804, child = "BoxC", targetSize = 2.6 },
+
 	-- MONTANHA: "Mesh Terrain Mountain Cliff Rock" (138567331315597). UM MeshPart
 	-- de 168 x 40 x 176. Vem cor de arenito e sem textura, então é repintado pra
 	-- rocha. A mesma malha serve de penhasco e de pedra solta: o que muda é o

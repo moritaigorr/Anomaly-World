@@ -230,6 +230,33 @@ function Forge.build(pos: Vector3, yRot: number)
 	-- enterrada na neve
 	Build.paintGround(pos.X, pos.Z, math.max(W, D) + BAY, Enum.Material.Cobblestone)
 
+	-- FERRARIA DE MALHA. Corpo em mesh (chaminé de pedra, madeiramento, telhado
+	-- com neve) guardado em ServerStorage._Construcoes. O braseiro continua
+	-- sendo posto aqui, porque é ele que dá a luz quente que marca a oficina de
+	-- longe — e é peça, não textura. Sem o molde, a oficina procedural abaixo
+	-- continua valendo inteira.
+	local moldes = game:GetService("ServerStorage"):FindFirstChild("_Construcoes")
+	local malha = moldes and moldes:FindFirstChild("ferraria")
+	if malha and malha:IsA("Model") then
+		local copia = malha:Clone()
+		pcall(function()
+			copia:ScaleTo(1.35)
+		end)
+		copia:PivotTo(CFrame.new(pos.X, Build.GROUND_LEVEL - 0.4, pos.Z) * CFrame.Angles(0, math.rad(yRot), 0))
+		for _, d in copia:GetDescendants() do
+			if d:IsA("BasePart") then
+				d.Anchored = true
+				local maior = math.max(d.Size.X, d.Size.Y, d.Size.Z)
+				d.CanCollide = maior >= 2.5
+				d.CastShadow = maior >= 3.5
+			end
+		end
+		copia.Parent = Build.getRoot()
+		-- forja acesa na boca da oficina
+		Build.fire((base * CFrame.new(0, 1.2, 4.5)).Position, 1.15, 22)
+		return
+	end
+
 	-- ---- corpo fechado (fundo) ----
 	for _, o in
 		{

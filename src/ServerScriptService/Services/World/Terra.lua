@@ -106,14 +106,22 @@ function Terra.build()
 					giro,
 					longe and ROCHA_LONGE or ROCHA
 				)
-				-- cume nevado: a mesma malha menor, branca, sentada no terço de cima
-				if math.random() < 0.85 then
+				-- NEVE DO CUME: MANCHAS, NÃO CALOTA.
+				-- A primeira versão punha UMA malha branca menor, centrada no topo.
+				-- Como só se enxerga a parte de cima dela, ela volta a ler como
+				-- DOMO — o mesmo defeito que a malha veio resolver. Agora são duas
+				-- ou três manchas menores, deslocadas do eixo, em alturas e giros
+				-- diferentes: o branco acompanha a rocha em vez de cobri-la com
+				-- uma tampa lisa.
+				for _ = 1, 2 + math.random(0, 1) do
+					local desl = (math.random() - 0.5) * larg * 0.5
+					local desl2 = (math.random() - 0.5) * prof * 0.5
 					Assets.spawnRelief(
-						Vector3.new(x, GROUND_TOP + alt * 0.46, z),
-						larg * 0.52,
-						alt * 0.42,
-						prof * 0.52,
-						giro + math.random(-25, 25),
+						Vector3.new(x + desl, GROUND_TOP + alt * (0.40 + math.random() * 0.22), z + desl2),
+						larg * (0.24 + math.random() * 0.14),
+						alt * (0.20 + math.random() * 0.12),
+						prof * (0.24 + math.random() * 0.14),
+						math.random(0, 359),
 						NEVE_CUME
 					)
 				end
