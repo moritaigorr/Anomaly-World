@@ -4,6 +4,7 @@
 -- com água e cordilheira ao redor. Referência: foto de Siglufjörður/Islândia —
 -- cidade encaixada entre montanha e mar, luz baixa e fria.
 
+local Assets = require(script.Parent.Assets)
 local Terrain = workspace.Terrain
 
 local Terra = {}
@@ -69,57 +70,59 @@ function Terra.build()
 	-- Antes havia um único anel a 370 studs e dava pra ver a planície acabar num
 	-- corte reto atrás dele. Agora uma faixa próxima (relevo) e outra distante e
 	-- bem alta (parede de horizonte) escondem a borda do mundo.
-	-- MACIÇO.
+	-- CORDILHEIRA DE MESH.
 	--
-	-- O QUE ESTAVA ERRADO: cada montanha era UMA FillBall. Uma esfera enterrada
-	-- pela metade é um domo — perfeitamente redondo, sem crista, sem vertente,
-	-- sem cume. Vinte domos brancos em volta do mapa não leem como cordilheira,
-	-- leem como bolas, que é exatamente o que eram.
+	-- DUAS TENTATIVAS ERRADAS ANTES DESTA, e vale registrar pra ninguém repetir:
+	-- primeiro cada montanha era UMA Terrain:FillBall — uma esfera enterrada pela
+	-- metade, ou seja, um domo liso. Depois tentei "consertar" empilhando de 5 a 8
+	-- bolas ao longo de uma crista, o que só produziu domos maiores encostados uns
+	-- nos outros. Bola continua sendo bola: FillBall não tem como gerar aresta,
+	-- face de rocha nem vertente.
 	--
-	-- Um maciço de verdade tem uma CRISTA (um eixo), cume no meio, ombros caindo
-	-- pras pontas e contorno irregular. Aqui isso sai de 5 a 8 bolas distribuídas
-	-- ao longo de um eixo sorteado: o raio cai nas extremidades, a altura sobe no
-	-- centro, e cada bola leva um desvio lateral pra silhueta não ficar simétrica.
-	-- A neve só entra acima de uma cota, então aparece a linha de neve em vez de
-	-- uma casquinha branca no topo de cada bola.
-	local function massif(cx: number, cz: number, r: number, alt: number)
-		local eixo = math.random() * math.pi
-		local n = 5 + math.random(3)
-		for i = 1, n do
-			local t = (i - 1) / (n - 1) - 0.5 -- -0.5 .. 0.5 ao longo da crista
-			local d = t * r * 1.8
-			local desvio = (math.random() - 0.5) * r * 0.4
-			local x = cx + math.cos(eixo) * d - math.sin(eixo) * desvio
-			local z = cz + math.sin(eixo) * d + math.cos(eixo) * desvio
-			-- raio maior no centro da crista, menor nas pontas
-			local rr = r * (0.5 + 0.5 * (1 - math.abs(t) * 2) ^ 0.7) * (0.82 + math.random() * 0.36)
-			local sobe = alt * (1 - math.abs(t) * 1.5) + (math.random() - 0.5) * alt * 0.18
-			Terrain:FillBall(Vector3.new(x, GROUND_TOP - rr * 0.45 + sobe, z), rr, Enum.Material.Rock)
-			-- linha de neve: só o que passa da cota, e não a tampa de cada bola
-			if sobe > alt * 0.30 then
-				Terrain:FillBall(
-					Vector3.new(x, GROUND_TOP + rr * 0.34 + sobe, z),
-					rr * (0.36 + math.random() * 0.16),
-					Enum.Material.Snow
-				)
-			end
-		end
-	end
+	-- Agora é MALHA: um mesh de penhasco do catálogo, esticado em três eixos
+	-- (MeshPart.Size aceita escala não uniforme, ScaleTo não) pra cada monte ter
+	-- proporção própria, com um pico menor por cima em branco fazendo a neve de
+	-- cume. Duas peças por montanha contra ~7 bolas de terreno — e finalmente
+	-- parece rocha.
+	local ROCHA = Color3.fromRGB(88, 92, 99)
+	local ROCHA_LONGE = Color3.fromRGB(104, 112, 124) -- mais claro: perspectiva aérea
+	local NEVE_CUME = Color3.fromRGB(226, 232, 238)
 
-	local function ridge(count: number, distMin: number, distSpan: number, rMin: number, rSpan: number)
+	local function serra(count: number, distMin: number, distSpan: number, largMin: number, largSpan: number, altF: number, longe: boolean)
 		for i = 1, count do
-			local ang = (i / count) * math.pi * 2 + math.random() * 0.15
+			local ang = (i / count) * math.pi * 2 + (math.random() - 0.5) * 0.22
 			if math.cos(ang) < 0.45 then -- pula o setor do mar
 				local dist = distMin + math.random() * distSpan
 				local x, z = math.cos(ang) * dist, math.sin(ang) * dist
-				local r = rMin + math.random() * rSpan
-				massif(x, z, r, r * 0.55)
+				local larg = largMin + math.random() * largSpan
+				local alt = larg * altF * (0.8 + math.random() * 0.45)
+				local prof = larg * (0.7 + math.random() * 0.5)
+				local giro = math.random(0, 359)
+				Assets.spawnRelief(
+					Vector3.new(x, GROUND_TOP, z),
+					larg,
+					alt,
+					prof,
+					giro,
+					longe and ROCHA_LONGE or ROCHA
+				)
+				-- cume nevado: a mesma malha menor, branca, sentada no terço de cima
+				if math.random() < 0.85 then
+					Assets.spawnRelief(
+						Vector3.new(x, GROUND_TOP + alt * 0.46, z),
+						larg * 0.52,
+						alt * 0.42,
+						prof * 0.52,
+						giro + math.random(-25, 25),
+						NEVE_CUME
+					)
+				end
 			end
 		end
 	end
 
-	ridge(20, 380, 70, 55, 55) -- serra próxima: dá profundidade
-	ridge(26, 600, 90, 110, 90) -- parede de horizonte: esconde a borda do mundo
+	serra(16, 390, 80, 200, 150, 0.62, false) -- serra próxima: dá profundidade
+	serra(20, 620, 110, 330, 240, 0.58, true) -- parede de horizonte
 
 	-- RELEVO DA PLANÍCIE.
 	-- Uma planície perfeitamente plana é o que faz a cidade ler como maquete
@@ -143,25 +146,22 @@ function Terra.build()
 		return false
 	end
 
-	-- afloramentos: rocha exposta com neve acumulada em cima
-	for _ = 1, 70 do
+	-- AFLORAMENTOS: pedra exposta na planície. Também eram bolas (uma de rocha
+	-- com outra de neve por cima); agora é a mesma malha de penhasco em tamanho
+	-- de pedra, girada ao acaso, que dá aresta e sombra de verdade.
+	for _ = 1, 55 do
 		local x = (math.random() - 0.5) * PLAIN * 0.86
 		local z = (math.random() - 0.5) * PLAIN * 0.86
 		if not blocked(x, z) then
-			local r = 9 + math.random() * 20
-			-- afloramento também é rocha quebrada, não bola: três lóbulos
-			-- desalinhados dão aresta e sombra onde antes havia um ovo liso.
-			local eixo = math.random() * math.pi
-			for j = -1, 1 do
-				local dd = j * r * 0.55
-				local rr = r * (j == 0 and 1 or 0.62) * (0.85 + math.random() * 0.3)
-				Terrain:FillBall(
-					Vector3.new(x + math.cos(eixo) * dd, GROUND_TOP - rr * 0.55, z + math.sin(eixo) * dd),
-					rr,
-					Enum.Material.Rock
-				)
-			end
-			Terrain:FillBall(Vector3.new(x, GROUND_TOP - r * 0.15, z), r * 0.5, Enum.Material.Snow)
+			local larg = 16 + math.random() * 26
+			Assets.spawnRelief(
+				Vector3.new(x, GROUND_TOP, z),
+				larg,
+				larg * (0.45 + math.random() * 0.4),
+				larg * (0.7 + math.random() * 0.5),
+				math.random(0, 359),
+				Color3.fromRGB(92, 96, 104)
+			)
 		end
 	end
 

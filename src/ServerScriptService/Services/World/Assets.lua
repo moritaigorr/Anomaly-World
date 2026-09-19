@@ -60,6 +60,17 @@ local CASA = 73888148623631
 Assets.catalog = {
 	PINE = { id = 8933272965, targetSize = 16 },
 
+	-- MONTANHA: "Mesh Terrain Mountain Cliff Rock" (138567331315597). UM MeshPart
+	-- de 168 x 40 x 176. Vem cor de arenito e sem textura, então é repintado pra
+	-- rocha. A mesma malha serve de penhasco e de pedra solta: o que muda é o
+	-- tamanho, e MeshPart.Size aceita escala nos três eixos (ao contrário de
+	-- ScaleTo), o que permite esticar em altura sem engordar a base.
+	MONTANHA = {
+		id = 138567331315597,
+		targetSize = 170,
+		paint = { { match = "", color = Color3.fromRGB(96, 99, 106), material = Enum.Material.Rock } },
+	},
+
 	CASA_CORPO = { id = CASA, child = "Main House", targetSize = 22 },
 	CASA_ALPENDRE = { id = CASA, child = "Extern Part [Optional]", targetSize = 17 },
 	LENHA = { id = CASA, child = "Log Pile", targetSize = 4.2 },
@@ -208,11 +219,20 @@ local function template(name: string): Model?
 		end
 	end
 
-	-- prepara o molde: tudo ancorado e com um PrimaryPart válido
+	-- Prepara o molde: tudo ancorado, e ENXUGA o custo.
+	--
+	-- Modelo de terceiro vem com CanCollide e CastShadow ligados em tudo,
+	-- inclusive em caixilho de janela, tora de lenha e ripa de 20 centímetros.
+	-- Multiplicado por 32 casas isso são milhares de cascos de colisão e de
+	-- projeções de sombra que ninguém vê e que o jogador não deveria esbarrar.
+	-- O corte é por tamanho: o que é estrutura continua sólido e projetando
+	-- sombra, o que é enfeite passa a ser só pixel.
 	for _, d in model:GetDescendants() do
 		if d:IsA("BasePart") then
 			d.Anchored = true
-			d.CanCollide = true
+			local maior = math.max(d.Size.X, d.Size.Y, d.Size.Z)
+			d.CanCollide = maior >= 1.6
+			d.CastShadow = maior >= 3.0
 		end
 	end
 
@@ -294,6 +314,28 @@ local function template(name: string): Model?
 end
 
 -- coloca uma cópia no mundo. yRot em graus; assenta a base no chão por raycast.
+-- Coloca uma montanha/penhasco com tamanho ABSOLUTO nos três eixos.
+-- ScaleTo só escala junto; uma serra precisa ser mais alta que larga, então
+-- aqui mexemos direto no Size do MeshPart, que aceita escala não uniforme.
+function Assets.spawnRelief(pos: Vector3, larg: number, alt: number, prof: number, yRot: number, cor: Color3?): Model?
+	local clone = Assets.spawn("MONTANHA", pos, yRot, 1, true)
+	if not clone then
+		return nil
+	end
+	for _, d in clone:GetDescendants() do
+		if d:IsA("MeshPart") then
+			d.Size = Vector3.new(larg, alt, prof)
+			if cor then
+				d.Color = cor
+			end
+		end
+	end
+	-- reassenta depois de redimensionar e enterra a saia pra não sobrar aresta
+	local cf, size = clone:GetBoundingBox()
+	clone:PivotTo(clone:GetPivot() + Vector3.new(0, (pos.Y - size.Y * 0.14) - (cf.Position.Y - size.Y / 2), 0))
+	return clone
+end
+
 -- scale multiplica o molde (variedade sem precisar de outro item no catalogo).
 -- collide = false tira a colisao: numa floresta de centenas de arvores, casco de
 -- colisao por arvore custa caro E prende o jogador em galho invisivel.
