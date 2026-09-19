@@ -77,7 +77,7 @@ local function piece(model: Model, size: Vector3, cf: CFrame, color: Color3, mat
 	return p
 end
 
-local function buildSteed(m: MountData.Mount, rootCF: CFrame): (Model, Part)
+local function buildSteedPrimitivas(m: MountData.Mount, rootCF: CFrame): (Model, Part)
 	local model = Instance.new("Model")
 	model.Name = "Montaria_" .. m.id
 	local L = m.length
@@ -246,6 +246,147 @@ local function buildSteed(m: MountData.Mount, rootCF: CFrame): (Model, Part)
 	return model, root
 end
 
+-- =============================================================== CORPO (MALHA)
+-- O cavalo de primitivas continua logo acima, como plano B. Este aqui é o
+-- corpo de verdade: uma malha SEGMENTADA (corpo, cabeça, quatro pernas, cauda)
+-- gerada pra este jogo, rearticulada com os mesmos Motor6D de antes — então o
+-- galope que já estava afinado continua valendo, sem tocar no MountController.
+--
+-- MEDIDAS DO MOLDE CRU (medidas, não estimadas), com o pivô no centro do corpo:
+--   casco .......... 2,765 abaixo do centro
+--   dorso/sela ..... 1,295 acima  -> 4,06 do casco à sela
+--   cabeça ......... +Z (o molde olha pro +Z; o personagem do Roblox olha pro
+--                    -Z, então o giro de 180° é aplicado AQUI, na montagem)
+local MOLDE_CASCO = 2.765 -- centro do corpo acima do casco
+local MOLDE_DORSO = 4.06 -- casco até a sela
+-- A SELA NÃO FICA NO CENTRO DO CAVALO, fica adiantada sobre a cernelha. Como o
+-- cavaleiro está preso ao HumanoidRootPart e o corpo é posicionado em relação a
+-- ele, alinhar o CENTRO do cavalo com o cavaleiro deixava ele montado na garupa,
+-- com a sela visível à frente. Recuar o cavalo por este tanto põe a sela embaixo
+-- de quem senta.
+local MOLDE_SELA_Z = 0.62
+
+local function buildSteedMalha(m: MountData.Mount, rootCF: CFrame): (Model?, Part?)
+	local pasta = game:GetService("ServerStorage"):FindFirstChild("_Montarias")
+	local arte = pasta and pasta:FindFirstChild("cavalo")
+	if not (arte and arte:IsA("Model")) then
+		return nil, nil
+	end
+
+	local model = Instance.new("Model")
+	model.Name = "Montaria_" .. m.id
+
+	local root = piece(model, Vector3.new(1, 1, 1), rootCF, m.corpo, Enum.Material.SmoothPlastic)
+	root.Name = "Root"
+	root.Transparency = 1
+	model.PrimaryPart = root
+
+	-- escala pra sela cair exatamente na altura que o cavaleiro vai ocupar
+	local escala = (m.raise + 1.2) / MOLDE_DORSO
+	local clone = arte:Clone()
+	local ok = pcall(function()
+		clone:ScaleTo(escala)
+	end)
+	if not ok then
+		clone:Destroy()
+		model:Destroy()
+		return nil, nil
+	end
+	-- pivô do molde = centro do corpo. Posiciona o centro na altura certa e gira
+	-- 180° pra cabeça apontar pro -Z do cavaleiro.
+	clone:PivotTo(
+		rootCF
+			* CFrame.new(0, MOLDE_CASCO * escala, MOLDE_SELA_Z * escala)
+			* CFrame.Angles(0, math.pi, 0)
+	)
+
+	local corpo = clone:FindFirstChild("Body", true) :: BasePart?
+	if not corpo then
+		clone:Destroy()
+		model:Destroy()
+		return nil, nil
+	end
+
+	-- traz as peças pro modelo da montaria
+	local segmentos: { [string]: BasePart } = {}
+	for _, d in clone:GetDescendants() do
+		if d:IsA("BasePart") then
+			segmentos[d.Name] = d
+			d.Anchored = false
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+			d.Massless = true
+			d.Parent = model
+		end
+	end
+	clone:Destroy()
+
+	-- JUNTA. Mesmo helper de antes: C0/C1 saem do CFrame atual, então criar a
+	-- junta não move nada. O pivô herda a orientação da RAIZ (não a da malha),
+	-- então girar em X é sempre passada pra frente — que é o que o
+	-- MountController assume.
+	local giro = rootCF - rootCF.Position
+	local function joint(nome: string, p0: BasePart, p1: BasePart, pivotPos: Vector3): Motor6D
+		local pivot = CFrame.new(pivotPos) * giro
+		local j = Instance.new("Motor6D")
+		j.Name = nome
+		j.Part0 = p0
+		j.Part1 = p1
+		j.C0 = p0.CFrame:Inverse() * pivot
+		j.C1 = p1.CFrame:Inverse() * pivot
+		j.Parent = p0
+		return j
+	end
+
+	joint("Body", root, corpo, corpo.Position)
+
+	-- quadris: pivô no TOPO de cada perna
+	for _, chave in { "LF", "RF", "LB", "RB" } do
+		local perna = segmentos["Leg" .. chave]
+		if perna then
+			local topo = perna.Position + perna.CFrame.UpVector * (perna.Size.Y / 2)
+			joint("Hip" .. chave, corpo, perna, topo)
+		end
+	end
+
+	-- pescoço: pivô na junção corpo/cabeça, não no centro da cabeça
+	local cabeca = segmentos.Head
+	if cabeca then
+		joint("Neck", corpo, cabeca, cabeca.Position - cabeca.CFrame.UpVector * (cabeca.Size.Y * 0.35))
+	end
+	local cauda = segmentos.Tail
+	if cauda then
+		joint("Tail", corpo, cauda, cauda.Position + cauda.CFrame.UpVector * (cauda.Size.Y / 2))
+	end
+
+	-- anomalia: o ponto quente das montarias raras
+	if m.brilho and cabeca then
+		local aura = Instance.new("ParticleEmitter")
+		aura.Rate = 9
+		aura.Lifetime = NumberRange.new(0.6, 1.1)
+		aura.Speed = NumberRange.new(0.5, 1.6)
+		aura.SpreadAngle = Vector2.new(180, 180)
+		aura.LightEmission = 0.8
+		aura.LightInfluence = 0
+		aura.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.8), NumberSequenceKeypoint.new(1, 0) })
+		aura.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.4), NumberSequenceKeypoint.new(1, 1) })
+		aura.Color = ColorSequence.new(m.brilho)
+		aura.Parent = cabeca
+	end
+
+	return model, root
+end
+
+-- Escolhe o corpo: malha quando o molde existe, primitivas quando não.
+local function buildSteed(m: MountData.Mount, rootCF: CFrame): (Model, Part)
+	local model, root = buildSteedMalha(m, rootCF)
+	if model and root then
+		return model, root
+	end
+	return buildSteedPrimitivas(m, rootCF)
+end
+
 -- =============================================================== CAVALEIRO
 -- Pose de montaria à mão. Sem animação publicada, girar o C0 é o único jeito de
 -- posar o R15 de um jeito que TODO MUNDO veja (C0 replica; Transform não).
@@ -256,10 +397,14 @@ local POSE: { [string]: CFrame } = {
 	Neck = CFrame.Angles(math.rad(8), 0, 0), -- e a cabeça compensa, olhando o horizonte
 
 	-- coxas à frente e ABERTAS: o cavaleiro escarrancha o barril (2,5 de largura)
-	LeftHip = CFrame.Angles(math.rad(44), 0, math.rad(-38)),
-	RightHip = CFrame.Angles(math.rad(44), 0, math.rad(38)),
-	LeftKnee = CFrame.Angles(math.rad(-52), 0, 0), -- canela cai reta pro estribo
-	RightKnee = CFrame.Angles(math.rad(-52), 0, 0),
+	-- ABERTURA DAS COXAS: 52 graus, nao 24 como na primeira versao. O barril do
+	-- cavalo de malha tem meia-largura 1,47 na montaria comum e chega a 1,60 na
+	-- maior; com pouca abertura o joelho para DENTRO do cavalo e a perna some.
+	-- Joelho menos dobrado (44) tambem alonga o alcance lateral.
+	LeftHip = CFrame.Angles(math.rad(42), 0, math.rad(-52)),
+	RightHip = CFrame.Angles(math.rad(42), 0, math.rad(52)),
+	LeftKnee = CFrame.Angles(math.rad(-44), 0, 0), -- canela cai reta pro estribo
+	RightKnee = CFrame.Angles(math.rad(-44), 0, 0),
 	LeftAnkle = CFrame.Angles(math.rad(14), 0, 0),
 	RightAnkle = CFrame.Angles(math.rad(14), 0, 0),
 
