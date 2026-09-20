@@ -90,7 +90,9 @@ local function onSprint(player: Player, down: unknown)
 	applyWalkSpeed(player)
 end
 
-local function onDash(player: Player, direction: Vector3?)
+-- `_direction` chega do cliente mas nao e usada: quem aplica o impulso e o
+-- proprio cliente (dono do personagem); aqui so valem stamina e i-frames.
+local function onDash(player: Player, _direction: Vector3?)
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local s = PlayerState.get(player)

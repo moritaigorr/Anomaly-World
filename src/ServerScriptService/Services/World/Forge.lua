@@ -229,6 +229,10 @@ function Forge.build(pos: Vector3, yRot: number)
 	-- soleira: chão de pedra da oficina, nivelado, pra não ficar meia parede
 	-- enterrada na neve
 	Build.paintGround(pos.X, pos.Z, math.max(W, D) + BAY, Enum.Material.Cobblestone)
+	-- O nivelamento pode alterar o material atingido pelo raycast; recalcule a
+	-- cota antes de assentar a malha e a forja.
+	y = Build.GROUND_LEVEL
+	base = CFrame.new(pos.X, y, pos.Z) * CFrame.Angles(0, math.rad(yRot), 0)
 
 	-- FERRARIA DE MALHA. Corpo em mesh (chaminé de pedra, madeiramento, telhado
 	-- com neve) guardado em ServerStorage._Construcoes. O braseiro continua
@@ -242,7 +246,21 @@ function Forge.build(pos: Vector3, yRot: number)
 		pcall(function()
 			copia:ScaleTo(1.35)
 		end)
-		copia:PivotTo(CFrame.new(pos.X, Build.GROUND_LEVEL - 0.4, pos.Z) * CFrame.Angles(0, math.rad(yRot), 0))
+		-- O pivot do asset não coincide com a base: posicionar pelo centro fazia
+		-- a ferraria afundar mais de 12 studs. Mede o bounding box depois de
+		-- escalar/rotacionar e assenta a base no chão real.
+		copia.Parent = Build.getRoot()
+		copia:PivotTo(CFrame.new(pos.X, 0, pos.Z) * CFrame.Angles(0, math.rad(yRot), 0))
+		local bbCF, bbSize = copia:GetBoundingBox()
+		local bottom = bbCF.Position.Y - bbSize.Y / 2
+		copia:PivotTo(copia:GetPivot() + Vector3.new(0, y - bottom, 0))
+		-- Uma malha com submodelos pode recalcular o bounding box após o primeiro
+		-- pivot. Faz uma segunda medição para eliminar qualquer offset residual.
+		local settledCF, settledSize = copia:GetBoundingBox()
+		local settledBottom = settledCF.Position.Y - settledSize.Y / 2
+		if math.abs(settledBottom - y) > 0.01 then
+			copia:PivotTo(copia:GetPivot() + Vector3.new(0, y - settledBottom, 0))
+		end
 		for _, d in copia:GetDescendants() do
 			if d:IsA("BasePart") then
 				d.Anchored = true
@@ -251,7 +269,6 @@ function Forge.build(pos: Vector3, yRot: number)
 				d.CastShadow = maior >= 3.5
 			end
 		end
-		copia.Parent = Build.getRoot()
 		-- forja acesa na boca da oficina
 		Build.fire((base * CFrame.new(0, 1.2, 4.5)).Position, 1.15, 22)
 		return
@@ -371,7 +388,7 @@ function Forge.build(pos: Vector3, yRot: number)
 	Build.crate((base * CFrame.new(-W / 2 + 2.0, 0, D / 2 + 8.0)).Position, 2.2)
 
 	-- pilha de carvão ao lado da forja
-	for i = 1, 7 do
+	for _ = 1, 7 do
 		local a = math.random() * math.pi * 2
 		local r = math.random() * 1.7
 		Build.part({

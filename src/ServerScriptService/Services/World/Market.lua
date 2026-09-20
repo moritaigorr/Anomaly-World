@@ -14,7 +14,6 @@
 --     brasa o dia inteiro. A neve sobra só na borda da praça.
 --   · varal de luzes ligando os postes: amarra a praça como um espaço só.
 
-local Assets = require(script.Parent.Assets)
 local Build = require(script.Parent.Build)
 local C = Build.C
 
@@ -260,31 +259,10 @@ local function stripedAwning(ridge: CFrame, width: number, slopeLen: number, a: 
 	})
 end
 
--- BARRACA DE ASSET. Tres modelos diferentes revezando: praca com seis barracas
--- identicas le como copiar-e-colar. Se o kit nao carregar, cai na barraca
--- montada com primitivas logo abaixo, que continua valendo.
-local BARRACAS = { "BARRACA_A", "BARRACA_B", "BARRACA_C" }
-
-local function stallAsset(cf: CFrame, i: number): boolean
-	local nome = BARRACAS[((i - 1) % #BARRACAS) + 1]
-	local m = Assets.spawn(nome, cf.Position, math.deg(select(2, cf:ToOrientation())), 1, true)
-	if not m then
-		return false
-	end
-	-- caixotes encostados na lateral: mercadoria esperando a vez
-	for _, sx in { -1, 1 } do
-		if math.random() < 0.6 then
-			local at = cf * CFrame.new(sx * 7.5, 0, (math.random() - 0.5) * 4)
-			Assets.spawn(
-				(math.random() < 0.5) and "CAIXOTE" or "ENGRADADO",
-				Vector3.new(at.X, Build.groundY(at.X, at.Z, 1), at.Z),
-				math.random(0, 359),
-				1,
-				true
-			)
-		end
-	end
-	return true
+-- Os pacotes externos testados falharam no cenário real (painéis gigantes ou
+-- geometria caída). Mantém o kit próprio até existir uma substituição aprovada.
+local function stallAsset(_cf: CFrame, _i: number): boolean
+	return false
 end
 
 local function stallPrimitivas(cf: CFrame, v: Vendor)
@@ -387,7 +365,6 @@ local function stallPrimitivas(cf: CFrame, v: Vendor)
 	Build.crate((cf * CFrame.new(W / 2 + 1.5, 0, D / 5)).Position, 2.1)
 
 	-- o vendedor fica ATRÁS do balcão, virado pra fora
-	vendorNPC(cf * CFrame.new(0, 0, D / 2 - 4.4), v)
 end
 
 -- =================================================================== BRASEIRO
@@ -486,6 +463,8 @@ local function bank(cf: CFrame)
 			CFrame = cf * CFrame.new(s * 1.6, 3.75, D / 2 + 0.1),
 			Color = C.WOOD_DARK,
 			Material = Enum.Material.WoodPlanks,
+			Name = "Door",
+			CanCollide = false,
 		})
 	end
 
@@ -537,10 +516,14 @@ local function lightLine(a: Vector3, b: Vector3)
 		if prev then
 			local mid = (prev + p) / 2
 			local d = p - prev
+			-- Corda cor de CORDA, não quase-preta. Com (38,34,30) a linha ficava
+			-- sem valor nenhum contra a neve e virava uma faixa preta dura
+			-- atravessando a praça — mais parecida com um risco na tela do que
+			-- com um varal. Um marrom claro devolve a leitura de fibra.
 			Build.part({
-				Size = Vector3.new(d.Magnitude + 0.1, 0.1, 0.1),
+				Size = Vector3.new(d.Magnitude + 0.1, 0.12, 0.12),
 				CFrame = CFrame.lookAt(mid, mid + d.Unit) * CFrame.Angles(0, math.rad(90), 0),
-				Color = Color3.fromRGB(38, 34, 30),
+				Color = Color3.fromRGB(118, 98, 74),
 				Material = Enum.Material.Fabric,
 				CanCollide = false,
 				CastShadow = false,
@@ -551,14 +534,17 @@ local function lightLine(a: Vector3, b: Vector3)
 				Shape = Enum.PartType.Ball,
 				Size = Vector3.new(0.55, 0.55, 0.55),
 				CFrame = CFrame.new(p - Vector3.new(0, 0.45, 0)),
-				Color = Color3.fromRGB(255, 206, 138),
+				-- âmbar controlado: a versão quase branca estourava contra a
+				-- neve e lia como esferas sem material, não como iluminação quente
+				-- de praça.
+				Color = Color3.fromRGB(255, 166, 78),
 				Material = Enum.Material.Neon,
-				Transparency = 0.2,
+				Transparency = 0.38,
 				CanCollide = false,
 				CastShadow = false,
 			})
 			if i % 3 == 0 then
-				Build.light(bulb, Color3.fromRGB(255, 196, 130), 0.3, 10)
+				Build.light(bulb, Color3.fromRGB(255, 158, 76), 0.18, 9)
 			end
 		end
 		prev = p
@@ -653,6 +639,12 @@ function Market.build(center: Vector3, radius: number)
 		if not stallAsset(cfStall, i) then
 			stallPrimitivas(cfStall, v)
 		end
+		-- O VENDEDOR E POSTO AQUI, não dentro da barraca.
+		-- Ele morava no fim da barraca de primitivas; quando a barraca virou
+		-- asset e o caminho antigo deixou de rodar, os seis vendedores da praça
+		-- sumiram junto — sobrou só o banqueiro, que é criado em outro lugar.
+		-- Separado assim, o NPC existe qualquer que seja a barraca.
+		vendorNPC(cfStall * CFrame.new(0, 0, -5.2), v)
 	end
 
 	for _, deg in LAMP_ANGLES do
@@ -674,7 +666,6 @@ function Market.build(center: Vector3, radius: number)
 	-- Antes isto derivava de `n`, que deixou de existir quando o anel virou
 	-- lista explícita de ângulos — e o erro derrubava a construção da CIDADE
 	-- INTEIRA, não só do banco.
-	local ba = Market.BANK_ANGLE
 	local bc = Market.bankCenter(center, radius)
 	local bp = Vector3.new(bc.X, Build.groundY(bc.X, bc.Z, 2), bc.Z)
 	bank(CFrame.lookAt(bp, Vector3.new(center.X, bp.Y, center.Z)))

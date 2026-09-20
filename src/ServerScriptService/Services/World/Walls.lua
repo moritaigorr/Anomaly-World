@@ -436,8 +436,8 @@ function Walls.build(config: Config?)
 			-- TERRENO, não peça: uma barra branca de 3,4 x 21 contornando a
 			-- muralha inteira é exatamente o tipo de aresta reta que denuncia
 			-- geometria. Bolas de neve vizinhas se fundem num banco contínuo.
-			for k = 0, 1 do
-				local at = (flat * CFrame.new(0, 0, (k - 0.5) * len * 0.55)).Position
+			for lado = 0, 1 do
+				local at = (flat * CFrame.new(0, 0, (lado - 0.5) * len * 0.55)).Position
 					+ outward * (BODY_T / 2 + 2.6)
 				Build.drift(Vector3.new(at.X, 2, at.Z), 2.4, 5.2)
 			end

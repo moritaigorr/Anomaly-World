@@ -300,6 +300,9 @@ end
 -- Constrói o mundo inteiro. Usado tanto em runtime quanto no "bake" (modo de
 -- edição), por isso não faz nada que dependa de jogador.
 local function buildWorld(): Folder
+	-- O layout é uma cidade, não um roguelike: uma nova run não pode sortear
+	-- casas em outros lotes e transformar um bug visual em alvo móvel.
+	math.randomseed(27182818)
 	local old = workspace:FindFirstChild("AnomalyWorld")
 	if old then
 		old:Destroy()

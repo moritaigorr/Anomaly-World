@@ -106,7 +106,8 @@ function HudController.Start()
 		box.BorderSizePixel = 0
 		box.Parent = powersHolder
 		Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
-		local stroke = Instance.new("UIStroke", box)
+		local stroke = Instance.new("UIStroke")
+	stroke.Parent = box
 		stroke.Color = TEAL
 		stroke.Thickness = 1.5
 
@@ -161,7 +162,8 @@ function HudController.Start()
 	dbFrame.Visible = false
 	dbFrame.Parent = gui
 	Instance.new("UICorner", dbFrame).CornerRadius = UDim.new(0, 8)
-	local dbStroke = Instance.new("UIStroke", dbFrame)
+	local dbStroke = Instance.new("UIStroke")
+	dbStroke.Parent = dbFrame
 	dbStroke.Color = TEAL
 	dbStroke.Thickness = 1.5
 

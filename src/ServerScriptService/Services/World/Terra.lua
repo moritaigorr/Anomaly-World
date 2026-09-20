@@ -4,6 +4,9 @@
 -- com água e cordilheira ao redor. Referência: foto de Siglufjörður/Islândia —
 -- cidade encaixada entre montanha e mar, luz baixa e fria.
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ZoneData = require(ReplicatedStorage.Shared.ZoneData)
+
 local Assets = require(script.Parent.Assets)
 local Terrain = workspace.Terrain
 
@@ -88,12 +91,34 @@ function Terra.build()
 	local ROCHA_LONGE = Color3.fromRGB(104, 112, 124) -- mais claro: perspectiva aérea
 	local NEVE_CUME = Color3.fromRGB(226, 232, 238)
 
+	-- ONDE NÃO PODE NASCER MONTANHA.
+	-- Quando a cordilheira era terreno isto já era discutível; agora que ela é
+	-- MALHA SÓLIDA virou bloqueio de verdade. O anel próximo fica a 390-470 do
+	-- centro e o círculo do boss está a 424 — ou seja, exatamente em cima. O
+	-- boss nasceu dentro da rocha. As zonas de caça correm o mesmo risco.
+	local BOSS_POS = Vector3.new(-300, 0, 300) -- espelha Wilds.BOSS_POS
+	local function arenaOcupada(x: number, z: number): boolean
+		local p = Vector3.new(x, 0, z)
+		if (p - BOSS_POS).Magnitude < 150 then
+			return true
+		end
+		for _, zona in ZoneData.zones do
+			if (p - Vector3.new(zona.center.X, 0, zona.center.Z)).Magnitude < zona.radius + 90 then
+				return true
+			end
+		end
+		return false
+	end
+
 	local function serra(count: number, distMin: number, distSpan: number, largMin: number, largSpan: number, altF: number, longe: boolean)
 		for i = 1, count do
 			local ang = (i / count) * math.pi * 2 + (math.random() - 0.5) * 0.22
 			if math.cos(ang) < 0.45 then -- pula o setor do mar
 				local dist = distMin + math.random() * distSpan
 				local x, z = math.cos(ang) * dist, math.sin(ang) * dist
+				if arenaOcupada(x, z) then
+					continue
+				end
 				local larg = largMin + math.random() * largSpan
 				local alt = larg * altF * (0.8 + math.random() * 0.45)
 				local prof = larg * (0.7 + math.random() * 0.5)
@@ -144,6 +169,9 @@ function Terra.build()
 	local function blocked(x: number, z: number): boolean
 		if math.sqrt(x * x + z * z) < TOWN_CLEAR then
 			return true
+		end
+		if arenaOcupada(x, z) then
+			return true -- nem afloramento dentro da arena do boss ou das zonas
 		end
 		if math.abs(x) < ROAD_HALF and z < 0 then
 			return true -- não fecha a saída do portão

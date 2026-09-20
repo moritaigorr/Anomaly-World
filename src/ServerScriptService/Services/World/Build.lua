@@ -581,7 +581,7 @@ function Build.banner(at: CFrame | Vector3, h: number, color: Color3)
 end
 
 -- lanterna de rua: poste de ferro, braço curvo e gaiola com chama
-function Build.lantern(pos: Vector3, withLight: boolean?)
+function Build.lantern(pos: Vector3, _withLight: boolean?)
 	pos = Vector3.new(pos.X, Build.groundY(pos.X, pos.Z, pos.Y), pos.Z)
 	Build.post(pos, 8, 0.45, Build.C.TIMBER, Enum.Material.Metal)
 	-- braço que projeta a lanterna pro lado

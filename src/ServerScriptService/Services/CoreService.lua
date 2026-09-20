@@ -5,7 +5,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CollectionService = game:GetService("CollectionService")
 
-local Constants = require(ReplicatedStorage.Shared.Constants)
 local CoreData = require(ReplicatedStorage.Shared.CoreData)
 local Net = require(ReplicatedStorage.Shared.Net)
 local PlayerState = require(script.Parent.PlayerState)

@@ -8,7 +8,6 @@
 -- no eixo Z) formando o "A", e a empena é escalonada. WedgePart com rotação dupla
 -- é imprevisível de orientação — foi o que quebrou a versão anterior.
 
-local Terrain = workspace.Terrain
 
 local Assets = require(script.Parent.Assets)
 local Build = require(script.Parent.Build)
@@ -101,7 +100,9 @@ local function house(pos: Vector3, w: number, d: number, floors: number, ang: nu
 			Vector3.new(-w / 2 - 0.6, 0, -d / 2 - 0.6),
 		}
 	do
-		Build.drift((base * o) + Vector3.new(0, 0.35, 0), 1.3, 2.3)
+		-- Acúmulo estreito e alongado: evita as bolas brancas que cobriam
+		-- telhado/chaminé e preserva a leitura de neve pesada do norte.
+		Build.drift((base * o) + Vector3.new(0, 0.35, 0), 0.72, 1.45)
 	end
 	-- e limpa a soleira, caso a neve espalhada da cidade tenha caído ali
 	-- 1,6 e não 2,4: a d/2 + 2,4 a soleira descolava da fachada e virava uma
@@ -325,12 +326,15 @@ local function house(pos: Vector3, w: number, d: number, floors: number, ang: nu
 		CFrame = base * CFrame.new(0, 2.5, dz + 0.1),
 		Color = Color3.fromRGB(24, 20, 18),
 		Material = Enum.Material.Wood,
+		CanCollide = false,
 	})
 	Build.part({ -- porta
 		Size = Vector3.new(3, 4.6, 0.35),
 		CFrame = base * CFrame.new(0, 2.3, dz + 0.3),
 		Color = C.WOOD_DARK,
 		Material = Enum.Material.WoodPlanks,
+		Name = "Door",
+		CanCollide = false,
 	})
 	for _, sx in { -1.7, 1.7 } do -- batentes
 		Build.part({
@@ -393,14 +397,14 @@ local function house(pos: Vector3, w: number, d: number, floors: number, ang: nu
 	-- silhueta de um bairro medieval visto de longe.
 	if floors >= 2 and math.random() < 0.5 then
 		local side = (math.random() < 0.5) and 1 or -1
-		local dz = (math.random() - 0.5) * dd * 0.4
+		local jitZ = (math.random() - 0.5) * dd * 0.4
 		local dw, dh, ddp = 3.6, 3.4, 3.2
 		local dx = side * (ww / 4)
 		local dy = topY + rh * 0.42
 
 		Build.part({ -- corpo da mansarda
 			Size = Vector3.new(dw, dh, ddp),
-			CFrame = base * CFrame.new(dx, dy, dz),
+			CFrame = base * CFrame.new(dx, dy, jitZ),
 			Color = plasterCol,
 			Material = Enum.Material.Plaster,
 		})
@@ -413,7 +417,7 @@ local function house(pos: Vector3, w: number, d: number, floors: number, ang: nu
 			Build.part({
 				Size = Vector3.new(mslope, 0.4, ddp + 1),
 				CFrame = base
-					* CFrame.new(dx + s2 * (mrw / 4), dy + dh / 2 + mrh / 2, dz)
+					* CFrame.new(dx + s2 * (mrw / 4), dy + dh / 2 + mrh / 2, jitZ)
 					* CFrame.Angles(0, 0, -s2 * mpitch),
 				Color = roofCol,
 				Material = roofTile and Enum.Material.Slate or Enum.Material.WoodPlanks,
@@ -421,7 +425,7 @@ local function house(pos: Vector3, w: number, d: number, floors: number, ang: nu
 			})
 		end
 		Build.window(
-			base * CFrame.new(dx + side * (ddp / 2 + 0.15), dy, dz)
+			base * CFrame.new(dx + side * (ddp / 2 + 0.15), dy, jitZ)
 				* CFrame.Angles(0, math.rad(side * 90), 0),
 			1.4,
 			1.6,
@@ -675,7 +679,10 @@ end
 -- Toda a infraestrutura em volta continua a mesma: aplaina a pegada, funda na
 -- cota certa, acumula neve nos cantos, limpa a soleira e registra a pegada pros
 -- props de rua. Só a geometria mudou.
-local KIT_W, KIT_D = 19, 22
+-- A malha "Main House" tem saliências (telhado e chaminé) que chegam a
+-- ~31x28 studs depois da escala. Os antigos 19x22 eram só o tamanho do
+-- alicerce imaginado e deixavam as casas se cruzarem visualmente.
+local KIT_W, KIT_D = 32, 29
 
 local function kitHouse(cx: number, z: number, ang: number): boolean
 	Build.paintGround(cx, z, math.max(KIT_W, KIT_D) + 1.5, Enum.Material.Cobblestone)
@@ -685,6 +692,11 @@ local function kitHouse(cx: number, z: number, ang: number): boolean
 	if not corpo then
 		return false
 	end
+	-- O pivô fornecido pelo asset fica deslocado do volume visível. Centralizar
+	-- a caixa real no lote faz a checagem de ocupação, a porta e o alpendre
+	-- apontarem para a construção que o jogador realmente enxerga.
+	local bodyCF = corpo:GetBoundingBox()
+	corpo:PivotTo(corpo:GetPivot() + Vector3.new(cx - bodyCF.Position.X, 0, z - bodyCF.Position.Z))
 
 	local base = CFrame.new(Vector3.new(cx, 0, z)) * CFrame.Angles(0, ang, 0)
 
@@ -710,7 +722,8 @@ local function kitHouse(cx: number, z: number, ang: number): boolean
 			Vector3.new(-KIT_W / 2 - 0.7, 0, -KIT_D / 2 - 0.7),
 		}
 	do
-		Build.drift((base * o) + Vector3.new(0, 0.35, 0), 1.3, 2.3)
+		-- Acúmulo estreito e alongado para não formar bolas sobre o telhado.
+		Build.drift((base * o) + Vector3.new(0, 0.35, 0), 0.72, 1.45)
 	end
 
 	local doorAt = base * Vector3.new(0, 0, KIT_D / 2 + 1.6)
@@ -751,8 +764,11 @@ local function buildKeep()
 	-- ServerStorage._Construcoes. A plataforma, a escadaria e os braseiros em
 	-- volta continuam sendo construídos aqui, porque é o que amarra o salão ao
 	-- resto da praça. Sem o molde, segue tudo como era.
-	local moldes = game:GetService("ServerStorage"):FindFirstChild("_Construcoes")
-	local salao = moldes and moldes:FindFirstChild("salao")
+	-- O molde externo do salão tem escala e linguagem visual incompatíveis com
+	-- a praça (volume pétreo/telhado sobreposto). O salão procedural abaixo é a
+	-- versão ativa até existir um asset de qualidade equivalente.
+	local salao: Model? = nil
+	local hasSallonMesh = false
 	if salao and salao:IsA("Model") then
 		Build.paintGround(c.X, Town.KEEP_Z + 4, 56, Enum.Material.Cobblestone)
 		local copia = salao:Clone()
@@ -771,6 +787,7 @@ local function buildKeep()
 			end
 		end
 		copia.Parent = Build.getRoot()
+		hasSallonMesh = true
 	end
 
 	Build.part({
@@ -782,21 +799,20 @@ local function buildKeep()
 	for i = 0, 8 do
 		Build.part({
 			Size = Vector3.new(28, 1.15, 2.8),
-			CFrame = CFrame.new(c + Vector3.new(0, 0.6 + i * 1.02, -14 - i * 2.6)),
+			-- Base na praça (z=35), topo encostando na plataforma (z=56).
+			-- Antes a sequência era invertida e subia PARA LONGE do Salão.
+			CFrame = CFrame.new(c + Vector3.new(0, 0.6 + i * 1.02, -35 + i * 2.6)),
 			Color = C.STONE_LIGHT,
 			Material = Enum.Material.Cobblestone,
 		})
 	end
-	-- muretas da escadaria
-	for _, sx in { -1, 1 } do
-		Build.part({
-			Size = Vector3.new(2.5, 6, 26),
-			CFrame = CFrame.new(c + Vector3.new(sx * 15, 3, -25)) * CFrame.Angles(math.rad(-11), 0, 0),
-			Color = C.STONE_DARK,
-			Material = Enum.Material.Cobblestone,
-		})
-	end
+	-- Sem mureta ou corrimão provisório: a leitura deve ser de uma escadaria
+	-- larga e limpa até o Hall, sem peças cruzando a passagem.
 
+	if not hasSallonMesh then
+	-- fallback procedural: só constrói quando o asset do salão não existe.
+	-- Antes os dois eram construídos ao mesmo tempo, sobrepondo paredes,
+	-- telhados e colisores e deixando o interior impossível de atravessar.
 	-- corpo do salão + telhado A (mesma técnica das casas)
 	local w, d, h = 48, 32, 22
 	local y0 = 9
@@ -892,6 +908,7 @@ local function buildKeep()
 		-- estourava a plataforma inteira. Mesmo defeito já corrigido nas lanternas
 		-- e nos braseiros da praça — este ficou de fora.
 		Build.fire(p + Vector3.new(0, 4.4, 0), 1.2, 24)
+	end
 	end
 end
 
@@ -1045,6 +1062,10 @@ local function buildDistricts()
 end
 
 function Town.build()
+	-- buildWorld/Bake podem chamar Town.build mais de uma vez no mesmo processo.
+	-- Não deixar lotes e soleiras de uma geração anterior contaminarem a próxima.
+	table.clear(doorsteps)
+	table.clear(pegadas)
 	-- ORDEM IMPORTA. Tudo que PINTA chão batido (ruas, praça, braseiros) tem que
 	-- rodar antes de tudo que ESPALHA neve, porque a neve só se deposita onde o
 	-- chão ainda é neve. Na ordem errada a praça nasceria por cima de montes já

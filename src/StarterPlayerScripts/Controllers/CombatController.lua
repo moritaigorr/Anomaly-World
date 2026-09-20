@@ -41,7 +41,8 @@ local function notify(text: string, color: Color3?)
 	label.Text = text
 	label.Parent = toastGui
 	Instance.new("UICorner", label).CornerRadius = UDim.new(0, 6)
-	local stroke = Instance.new("UIStroke", label)
+	local stroke = Instance.new("UIStroke")
+	stroke.Parent = label
 	stroke.Color = color or Color3.fromRGB(47, 212, 194)
 	stroke.Thickness = 1.5
 

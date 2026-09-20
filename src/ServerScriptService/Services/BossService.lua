@@ -8,7 +8,6 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
 
 local BossData = require(ReplicatedStorage.Shared.BossData)
 local Net = require(ReplicatedStorage.Shared.Net)
@@ -22,6 +21,7 @@ local BossService = {}
 -- círculo ritual, bem longe da cidade (igual a Wilds.BOSS_POS)
 local SPAWN_POS = Vector3.new(-300, 5, 300)
 local RESPAWN_DELAY = 20
+local ARENA_RADIUS = 86
 
 -- avisa TODOS os clientes (toast na tela)
 local function broadcast(text: string, color: Color3?)
@@ -107,12 +107,13 @@ local function spawnBoss()
 	hum.Parent = model
 
 	model.PrimaryPart = hrp
-	-- assenta o boss no chão (raycast), qualquer que seja o mapa
-	local rp = RaycastParams.new()
-	rp.FilterType = Enum.RaycastFilterType.Exclude
-	rp.FilterDescendantsInstances = { model }
-	local hit = workspace:Raycast(SPAWN_POS + Vector3.new(0, 300, 0), Vector3.new(0, -1000, 0), rp)
-	local restY = (hit and hit.Position.Y or 0) + hrp.Size.Y / 2
+	-- O círculo ritual é uma plataforma construída em cota própria. Um raycast
+	-- amplo aqui podia acertar a montanha atrás dele antes de chegar à arena,
+	-- colocando o boss dezenas de studs acima do círculo e fazendo-o atravessar
+	-- o relevo durante a perseguição. A altura do centro é deliberadamente
+	-- alinhada ao piso do círculo (SPAWN_POS.Y), e o root tem metade da altura
+	-- abaixo dele para encostar no piso de pedra/terra.
+	local restY = SPAWN_POS.Y
 	hrp.CFrame = CFrame.new(SPAWN_POS.X, restY, SPAWN_POS.Z)
 
 	-- ------- decoração ancorada que segue o corpo (sem física/solda) -------
@@ -281,6 +282,15 @@ local function spawnBoss()
 		if flat.Magnitude > boss.attackRange then
 			local step = flat.Unit * phase.speed * dt
 			local newPos = hrp.Position + step
+			-- O boss deve dominar a arena ritual, não atravessar a cidade atrás
+			-- de um jogador que fugiu. Limitar apenas o deslocamento horizontal
+			-- preserva a perseguição dentro do encontro e impede atravessar
+			-- montanhas, muralhas e construções.
+			local arenaOffset = Vector3.new(newPos.X - SPAWN_POS.X, 0, newPos.Z - SPAWN_POS.Z)
+			if arenaOffset.Magnitude > ARENA_RADIUS then
+				local edge = arenaOffset.Unit * ARENA_RADIUS
+				newPos = Vector3.new(SPAWN_POS.X + edge.X, restY, SPAWN_POS.Z + edge.Z)
+			end
 			hrp.CFrame = CFrame.lookAt(
 				Vector3.new(newPos.X, restY, newPos.Z),
 				Vector3.new(target.Position.X, restY, target.Position.Z)

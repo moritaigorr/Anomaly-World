@@ -109,7 +109,7 @@ end
 -- tira guarda (posture) de um inimigo; se zerar, ele fica atordoado e vulnerável.
 -- Usado pelo ataque pesado (F) e pelo ultimate. A guarda do JOGADOR não existe
 -- mais — este sistema é só dos inimigos, e vive em atributos do Model.
-function CombatUtil.damageEnemyPosture(enemy: Model, amount: number, notify: Player?)
+function CombatUtil.damageEnemyPosture(enemy: Model, amount: number, _notify: Player?)
 	local hum = enemy:FindFirstChildOfClass("Humanoid")
 	local hrp = rootOf(enemy)
 	if not hum or not hrp or hum.Health <= 0 then
@@ -135,7 +135,9 @@ end
 
 -- aplica dano de um inimigo NO jogador, respeitando a esquiva.
 -- O bloqueio e o parry foram removidos: fora dos i-frames do dash, o golpe entra.
-function CombatUtil.damagePlayer(player: Player, amount: number, attacker: Model?)
+-- `_attacker` ficou sem uso quando o parry saiu; a assinatura continua porque
+-- os chamadores passam o inimigo e ele volta a servir no dia que houver atordoamento.
+function CombatUtil.damagePlayer(player: Player, amount: number, _attacker: Model?)
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?

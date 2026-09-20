@@ -60,15 +60,9 @@ local CASA = 73888148623631
 Assets.catalog = {
 	PINE = { id = 8933272965, targetSize = 16 },
 
-	-- KIT DE MERCADO (90935751716804, "Medieval Market Pack"): tres barracas
-	-- diferentes, tres caixotes e um barril, todos em mesh com textura. Tres
-	-- modelos de barraca importam: praca com seis barracas IGUAIS denuncia
-	-- geracao automatica mais que qualquer outra coisa na cidade.
-	BARRACA_A = { id = 90935751716804, child = "StallA", targetSize = 15 },
-	BARRACA_B = { id = 90935751716804, child = "StallB", targetSize = 15 },
-	BARRACA_C = { id = 90935751716804, child = "StallC", targetSize = 17 },
-	CAIXOTE = { id = 90935751716804, child = "BoxA", targetSize = 4.6 },
-	ENGRADADO = { id = 90935751716804, child = "BoxC", targetSize = 2.6 },
+	-- Nenhuma barraca externa aprovada ainda. Os dois pacotes avaliados tinham
+	-- transformações ou painéis incompatíveis com a praça; Market.lua usa o
+	-- kit próprio até existir um asset que passe a validação visual no cenário.
 
 	-- MONTANHA: "Mesh Terrain Mountain Cliff Rock" (138567331315597). UM MeshPart
 	-- de 168 x 40 x 176. Vem cor de arenito e sem textura, então é repintado pra
@@ -81,11 +75,15 @@ Assets.catalog = {
 		paint = { { match = "", color = Color3.fromRGB(96, 99, 106), material = Enum.Material.Rock } },
 	},
 
-	CASA_CORPO = { id = CASA, child = "Main House", targetSize = 22 },
-	CASA_ALPENDRE = { id = CASA, child = "Extern Part [Optional]", targetSize = 17 },
+	-- CASA_CORPO removida da geração. O modelo externo tinha pivô e volume
+	-- incompatíveis com os lotes (casas se cruzavam) e repetia a mesma silhueta
+	-- por toda a cidade. Town.lua agora usa suas casas próprias, variadas.
 	LENHA = { id = CASA, child = "Log Pile", targetSize = 4.2 },
 	CEPO = { id = CASA, child = "Log Cutter", targetSize = 2.4 },
-	BANCO = { id = CASA, child = "Smal Seat", targetSize = 2.4 },
+	-- BANCO não faz parte do catálogo externo ativo: a peça "Smal Seat"
+	-- falha na carga nesta conta e o Town.lua já possui fallback procedural
+	-- equivalente. Deixar a entrada aqui só poluía o diagnóstico com
+	-- "falhou: BANCO" mesmo quando a cidade estava correta.
 
 	BARREL = {
 		id = 9478941574,
@@ -146,11 +144,9 @@ local function template(name: string): Model?
 			return InsertService:LoadAsset(entry.id)
 		end)
 	end
-	if container then
-		-- nada a fazer: veio do cache de pacotes
-	elseif ok and result then
+	if not container and ok and result then
 		container = result
-	else
+	elseif not container then
 		lastErr = tostring(result)
 		local ok2, objs = pcall(function()
 			return game:GetObjects("rbxassetid://" .. tostring(entry.id))
@@ -168,11 +164,35 @@ local function template(name: string): Model?
 		end
 	end
 
+	-- UMA TENTATIVA SO ERA POUCO. O download depende da rede, e uma falha
+	-- passageira marcava o asset como morto pela SESSAO INTEIRA -- foi assim
+	-- que o alpendre das casas sumiu de um build pro outro, sem nada ter
+	-- mudado no codigo. Duas tentativas extras, com uma pausa curta entre
+	-- elas, resolvem o caso comum sem travar a construcao do mundo.
+	if not container then
+		for tentativa = 1, 2 do
+			task.wait(0.4 * tentativa)
+			local okR, objs = pcall(function()
+				return game:GetObjects("rbxassetid://" .. tostring(entry.id))
+			end)
+			if okR and objs and #objs > 0 then
+				local wrap = Instance.new("Model")
+				wrap.Name = name
+				for _, o in objs do
+					o.Parent = wrap
+				end
+				container = wrap
+				warn(("[Assets] '%s' carregou na tentativa %d"):format(name, tentativa + 1))
+				break
+			end
+		end
+	end
+
 	if not container then
 		failed[name] = true
 		local msg = ("%s: %s"):format(name, string.sub(tostring(lastErr), 1, 90))
 		table.insert(Assets.errors, msg)
-		warn(("[Assets] '%s' (%d) nao carregou: %s"):format(name, entry.id, tostring(lastErr)))
+		warn(("[Assets] '%s' (%d) nao carregou apos 3 tentativas: %s"):format(name, entry.id, tostring(lastErr)))
 		return nil
 	end
 	local removed = sanitize(container)
@@ -237,11 +257,29 @@ local function template(name: string): Model?
 	-- projeções de sombra que ninguém vê e que o jogador não deveria esbarrar.
 	-- O corte é por tamanho: o que é estrutura continua sólido e projetando
 	-- sombra, o que é enfeite passa a ser só pixel.
+	local function isPassagePart(part: BasePart): boolean
+		local node: Instance? = part
+		while node and node ~= model do
+			local label = string.lower(node.Name)
+			if string.find(label, "door", 1, true)
+				or string.find(label, "window", 1, true)
+				or string.find(label, "glass", 1, true)
+				or string.find(label, "handle", 1, true)
+			then
+				return true
+			end
+			node = node.Parent
+		end
+		return false
+	end
+
 	for _, d in model:GetDescendants() do
 		if d:IsA("BasePart") then
 			d.Anchored = true
 			local maior = math.max(d.Size.X, d.Size.Y, d.Size.Z)
-			d.CanCollide = maior >= 1.6
+			-- Portas e janelas são passagem/decoração; o heurístico por tamanho
+			-- antigo transformava o pacote inteiro "Doors & Windows" em parede.
+			d.CanCollide = not isPassagePart(d) and maior >= 1.6
 			d.CastShadow = maior >= 3.0
 		end
 	end
@@ -370,10 +408,12 @@ function Assets.spawn(name: string, pos: Vector3, yRot: number?, scale: number?,
 		end
 	end
 
-	-- mede o chão para a base encostar (sem enterrar nem flutuar)
+	-- mede o chão para a base encostar (sem enterrar nem flutuar).
+	-- Só o Terrain conta: um raycast amplo podia acertar telhados, pontes ou
+	-- outra decoração construída antes e assentar o asset em cima dela.
 	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { clone }
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances = { workspace.Terrain }
 	params.IgnoreWater = true
 	local hit = workspace:Raycast(Vector3.new(pos.X, 400, pos.Z), Vector3.new(0, -900, 0), params)
 	local groundY = hit and hit.Position.Y or 0
@@ -384,6 +424,19 @@ function Assets.spawn(name: string, pos: Vector3, yRot: number?, scale: number?,
 	local bbCF, size = clone:GetBoundingBox()
 	local bottom = bbCF.Position.Y - size.Y / 2
 	clone:PivotTo(clone:GetPivot() + Vector3.new(0, groundY - bottom, 0))
+	-- Alguns modelos de catálogo têm o pivô deslocado do centro da malha.
+	-- Depois do primeiro assentamento, mede a posição real da base e repete o
+	-- raycast nela; isso evita casas flutuando ou enterradas em terreno inclinado.
+	local settledCF, settledSize = clone:GetBoundingBox()
+	local baseHit = workspace:Raycast(
+		Vector3.new(settledCF.Position.X, 400, settledCF.Position.Z),
+		Vector3.new(0, -900, 0),
+		params
+	)
+	if baseHit then
+		local settledBottom = settledCF.Position.Y - settledSize.Y / 2
+		clone:PivotTo(clone:GetPivot() + Vector3.new(0, baseHit.Position.Y - settledBottom, 0))
+	end
 	Assets.placed += 1
 	return clone
 end
