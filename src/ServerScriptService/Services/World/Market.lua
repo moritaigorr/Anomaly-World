@@ -14,6 +14,7 @@
 --     brasa o dia inteiro. A neve sobra só na borda da praça.
 --   · varal de luzes ligando os postes: amarra a praça como um espaço só.
 
+local Assets = require(script.Parent.Assets)
 local Build = require(script.Parent.Build)
 local C = Build.C
 
@@ -259,10 +260,35 @@ local function stripedAwning(ridge: CFrame, width: number, slopeLen: number, a: 
 	})
 end
 
--- Os pacotes externos testados falharam no cenário real (painéis gigantes ou
--- geometria caída). Mantém o kit próprio até existir uma substituição aprovada.
-local function stallAsset(_cf: CFrame, _i: number): boolean
-	return false
+-- BARRACA DE ASSET.
+-- Tres modelos diferentes revezando: praca com seis barracas identicas le como
+-- copiar-e-colar. Ja foram desligadas uma vez por "painel gigante / geometria
+-- caida" -- mas a causa era posicionar pelo PIVO do asset, que nao coincide com
+-- o volume visivel. Assets.spawn agora centra pelo bounding box, entao a
+-- barraca assenta onde foi pedida. Se o kit nao carregar, cai na barraca de
+-- primitivas logo abaixo.
+local BARRACAS = { "BARRACA_A", "BARRACA_B", "BARRACA_C" }
+
+local function stallAsset(cf: CFrame, i: number): boolean
+	local nome = BARRACAS[((i - 1) % #BARRACAS) + 1]
+	local m = Assets.spawn(nome, cf.Position, math.deg(select(2, cf:ToOrientation())), 1, true)
+	if not m then
+		return false
+	end
+	-- caixotes encostados na lateral: mercadoria esperando a vez
+	for _, sx in { -1, 1 } do
+		if math.random() < 0.55 then
+			local at = cf * CFrame.new(sx * 8.5, 0, (math.random() - 0.5) * 4)
+			Assets.spawn(
+				(math.random() < 0.5) and "CAIXOTE" or "ENGRADADO",
+				Vector3.new(at.X, Build.groundY(at.X, at.Z, 1), at.Z),
+				math.random(0, 359),
+				1,
+				true
+			)
+		end
+	end
+	return true
 end
 
 local function stallPrimitivas(cf: CFrame, v: Vendor)

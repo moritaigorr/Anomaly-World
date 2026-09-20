@@ -34,7 +34,11 @@ MountData.list = {
 		raridade = "Common",
 		speed = 46,
 		jump = 58,
-		raise = 3.4,
+		-- RAISE subiu de 3,4 pra 4,6 junto com a troca do modelo. O molde novo
+		-- tem 6,15 do casco a sela; com o valor antigo a escala caia pra 0,75 e
+		-- o destrier voltava a ter tamanho de poney. Isto e a altura do dorso,
+		-- e e ela que dita a escala do bicho inteiro.
+		raise = 4.6,
 		length = 7.4,
 		corpo = Color3.fromRGB(96, 74, 58),
 		crina = Color3.fromRGB(74, 58, 42),
@@ -48,7 +52,7 @@ MountData.list = {
 		raridade = "Rare",
 		speed = 54,
 		jump = 62,
-		raise = 3.6,
+		raise = 4.9,
 		length = 7.8,
 		corpo = Color3.fromRGB(206, 208, 212),
 		crina = Color3.fromRGB(232, 236, 240),
@@ -62,7 +66,7 @@ MountData.list = {
 		raridade = "Epic",
 		speed = 60,
 		jump = 70,
-		raise = 3.8,
+		raise = 5.2,
 		length = 8.2,
 		corpo = Color3.fromRGB(44, 44, 50),
 		crina = Color3.fromRGB(20, 132, 122),

@@ -257,14 +257,19 @@ end
 --   dorso/sela ..... 1,295 acima  -> 4,06 do casco à sela
 --   cabeça ......... +Z (o molde olha pro +Z; o personagem do Roblox olha pro
 --                    -Z, então o giro de 180° é aplicado AQUI, na montagem)
-local MOLDE_CASCO = 2.765 -- centro do corpo acima do casco
-local MOLDE_DORSO = 4.06 -- casco até a sela
+-- Medidas do molde CRU, tiradas do proprio modelo e nao estimadas:
+--   casco ..... 4,291 abaixo do centro do corpo
+--   sela ...... 6,153 acima do casco
+--   barril .... 2,03 de largura (meia 1,02) -- bem mais estreito que o poney
+--               anterior, entao a perna do cavaleiro sobra com folga
+local MOLDE_CASCO = 4.291
+local MOLDE_DORSO = 6.153
 -- A SELA NÃO FICA NO CENTRO DO CAVALO, fica adiantada sobre a cernelha. Como o
 -- cavaleiro está preso ao HumanoidRootPart e o corpo é posicionado em relação a
 -- ele, alinhar o CENTRO do cavalo com o cavaleiro deixava ele montado na garupa,
 -- com a sela visível à frente. Recuar o cavalo por este tanto põe a sela embaixo
 -- de quem senta.
-local MOLDE_SELA_Z = 0.62
+local MOLDE_SELA_Z = 0.55
 
 local function buildSteedMalha(m: MountData.Mount, rootCF: CFrame): (Model?, Part?)
 	local pasta = game:GetService("ServerStorage"):FindFirstChild("_Montarias")

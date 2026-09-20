@@ -60,9 +60,20 @@ local CASA = 73888148623631
 Assets.catalog = {
 	PINE = { id = 8933272965, targetSize = 16 },
 
-	-- Nenhuma barraca externa aprovada ainda. Os dois pacotes avaliados tinham
-	-- transformações ou painéis incompatíveis com a praça; Market.lua usa o
-	-- kit próprio até existir um asset que passe a validação visual no cenário.
+	-- KIT DE MERCADO (90935751716804, "Medieval Market Pack"): tres barracas
+	-- diferentes, tres caixotes e um barril, todos em mesh com textura. Tres
+	-- modelos e nao um: praca com seis barracas IGUAIS denuncia geracao
+	-- automatica mais que qualquer outra coisa na cidade.
+	--
+	-- Ja foram desativadas uma vez por "painel gigante / geometria caida". A
+	-- causa nao era o asset: era posicionar pelo PIVO, que nao coincide com o
+	-- volume visivel. Market.lua agora assenta pelo bounding box, igual ao que
+	-- ja foi feito nas casas e na ferraria.
+	BARRACA_A = { id = 90935751716804, child = "StallA", targetSize = 15 },
+	BARRACA_B = { id = 90935751716804, child = "StallB", targetSize = 15 },
+	BARRACA_C = { id = 90935751716804, child = "StallC", targetSize = 17 },
+	CAIXOTE = { id = 90935751716804, child = "BoxA", targetSize = 4.6 },
+	ENGRADADO = { id = 90935751716804, child = "BoxC", targetSize = 2.6 },
 
 	-- MONTANHA: "Mesh Terrain Mountain Cliff Rock" (138567331315597). UM MeshPart
 	-- de 168 x 40 x 176. Vem cor de arenito e sem textura, então é repintado pra
@@ -75,15 +86,15 @@ Assets.catalog = {
 		paint = { { match = "", color = Color3.fromRGB(96, 99, 106), material = Enum.Material.Rock } },
 	},
 
-	-- CASA_CORPO removida da geração. O modelo externo tinha pivô e volume
-	-- incompatíveis com os lotes (casas se cruzavam) e repetia a mesma silhueta
-	-- por toda a cidade. Town.lua agora usa suas casas próprias, variadas.
+	-- CASA: o pivo do modelo externo NAO fica no centro do volume visivel, e foi
+	-- isso que fez as casas se cruzarem quando o lote foi calculado pelo pivo.
+	-- A correcao esta em Town.kitHouse (recentra pelo bounding box) e o lote
+	-- passou a 32 x 29, que e a pegada medida. Com isso o asset volta.
+	CASA_CORPO = { id = CASA, child = "Main House", targetSize = 22 },
+	CASA_ALPENDRE = { id = CASA, child = "Extern Part [Optional]", targetSize = 17 },
 	LENHA = { id = CASA, child = "Log Pile", targetSize = 4.2 },
 	CEPO = { id = CASA, child = "Log Cutter", targetSize = 2.4 },
-	-- BANCO não faz parte do catálogo externo ativo: a peça "Smal Seat"
-	-- falha na carga nesta conta e o Town.lua já possui fallback procedural
-	-- equivalente. Deixar a entrada aqui só poluía o diagnóstico com
-	-- "falhou: BANCO" mesmo quando a cidade estava correta.
+	BANCO = { id = CASA, child = "Smal Seat", targetSize = 2.4 },
 
 	BARREL = {
 		id = 9478941574,
@@ -420,10 +431,28 @@ function Assets.spawn(name: string, pos: Vector3, yRot: number?, scale: number?,
 
 	-- 1) gira e posiciona no XZ
 	clone:PivotTo(CFrame.new(pos.X, 0, pos.Z) * CFrame.Angles(0, math.rad(yRot or 0), 0))
-	-- 2) mede JÁ girado e sobe o tanto exato pra base encostar no chão
+
+	-- 2) CENTRA PELO VOLUME VISÍVEL, não pelo pivô.
+	-- O pivô que vem no asset raramente coincide com o meio da geometria. Ao
+	-- posicionar pelo pivô, o modelo assenta deslocado do ponto pedido — e foi
+	-- exatamente isso que fez as casas se cruzarem nos lotes, a ferraria
+	-- afundar 12 studs e as barracas parecerem "caídas". Corrigir aqui, uma
+	-- vez, vale pra todo asset do catálogo em vez de repetir a conta em cada
+	-- chamador.
 	local bbCF, size = clone:GetBoundingBox()
+	clone:PivotTo(clone:GetPivot() + Vector3.new(pos.X - bbCF.Position.X, 0, pos.Z - bbCF.Position.Z))
+
+	-- 3) mede DE NOVO (já girado e centrado) e sobe o tanto exato pra base
+	-- encostar no chão. Modelo com submodelos recalcula a caixa depois do
+	-- primeiro PivotTo, então a segunda medição não é desperdício.
+	bbCF, size = clone:GetBoundingBox()
 	local bottom = bbCF.Position.Y - size.Y / 2
 	clone:PivotTo(clone:GetPivot() + Vector3.new(0, groundY - bottom, 0))
+	local fimCF, fimSize = clone:GetBoundingBox()
+	local fimBottom = fimCF.Position.Y - fimSize.Y / 2
+	if math.abs(fimBottom - groundY) > 0.01 then
+		clone:PivotTo(clone:GetPivot() + Vector3.new(0, groundY - fimBottom, 0))
+	end
 	-- Alguns modelos de catálogo têm o pivô deslocado do centro da malha.
 	-- Depois do primeiro assentamento, mede a posição real da base e repete o
 	-- raycast nela; isso evita casas flutuando ou enterradas em terreno inclinado.

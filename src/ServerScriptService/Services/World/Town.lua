@@ -759,24 +759,44 @@ local function buildKeep()
 	-- mesma correção de fundação das casas: y = 0 enterrava a base inteira
 	local c = Vector3.new(0, Build.GROUND_LEVEL - 0.5, Town.KEEP_Z)
 
-	-- SALÃO DO JARL. O corpo do salão é uma malha (paredes de tora, telhado de
-	-- tabuinha em camadas, alicerce de pedra) guardada em
-	-- ServerStorage._Construcoes. A plataforma, a escadaria e os braseiros em
-	-- volta continuam sendo construídos aqui, porque é o que amarra o salão ao
-	-- resto da praça. Sem o molde, segue tudo como era.
-	-- O molde externo do salão tem escala e linguagem visual incompatíveis com
-	-- a praça (volume pétreo/telhado sobreposto). O salão procedural abaixo é a
-	-- versão ativa até existir um asset de qualidade equivalente.
-	local salao: Model? = nil
+	-- SALÃO DO JARL. O corpo é uma malha (paredes de tora, telhado de tabuinha
+	-- em camadas, alicerce de pedra) guardada em ServerStorage._Construcoes. A
+	-- plataforma, a escadaria e os braseiros continuam sendo construídos aqui,
+	-- porque é o que amarra o salão ao resto da praça.
+	--
+	-- Já foi desligado uma vez por "escala e linguagem visual incompatíveis".
+	-- O problema real era de ASSENTAMENTO: posicionava pelo pivô, numa altura
+	-- chutada (GROUND_LEVEL + 8,2), e o pivô do molde não é a base. Agora mede
+	-- o bounding box depois de escalar e encosta a base no piso da plataforma —
+	-- a mesma conta que consertou a ferraria.
+	local moldes = game:GetService("ServerStorage"):FindFirstChild("_Construcoes")
+	local salao = moldes and moldes:FindFirstChild("salao")
 	local hasSallonMesh = false
 	if salao and salao:IsA("Model") then
 		Build.paintGround(c.X, Town.KEEP_Z + 4, 56, Enum.Material.Cobblestone)
-		local copia = salao:Clone()
-		local escala = 1.9
+		local copia = (salao :: Model):Clone()
 		pcall(function()
-			copia:ScaleTo(escala)
+			copia:ScaleTo(1.9)
 		end)
-		copia:PivotTo(CFrame.new(c.X, Build.GROUND_LEVEL + 8.2, Town.KEEP_Z + 12))
+		copia.Parent = Build.getRoot()
+		-- topo da plataforma de pedra do salão (96 x 9 centrada em y = 4,5)
+		local pisoY = Build.GROUND_LEVEL + 9
+		copia:PivotTo(CFrame.new(c.X, 0, Town.KEEP_Z + 12))
+		local bbCF, bbSize = copia:GetBoundingBox()
+		-- centra no XZ pelo volume visível e encosta a base no piso
+		copia:PivotTo(
+			copia:GetPivot()
+				+ Vector3.new(
+					c.X - bbCF.Position.X,
+					pisoY - (bbCF.Position.Y - bbSize.Y / 2),
+					(Town.KEEP_Z + 12) - bbCF.Position.Z
+				)
+		)
+		local fimCF, fimSize = copia:GetBoundingBox()
+		local fimBase = fimCF.Position.Y - fimSize.Y / 2
+		if math.abs(fimBase - pisoY) > 0.01 then
+			copia:PivotTo(copia:GetPivot() + Vector3.new(0, pisoY - fimBase, 0))
+		end
 		for _, d in copia:GetDescendants() do
 			if d:IsA("BasePart") then
 				d.Anchored = true
@@ -786,7 +806,6 @@ local function buildKeep()
 				d.CastShadow = maior >= 4
 			end
 		end
-		copia.Parent = Build.getRoot()
 		hasSallonMesh = true
 	end
 
