@@ -360,7 +360,10 @@ end
 local VARIANTES: { [Enum.Material]: string } = {
 	[Enum.Material.Cobblestone] = "AW_PedraMuralha",
 	[Enum.Material.WoodPlanks] = "AW_MadeiraEnvelhecida",
-	[Enum.Material.Plaster] = "AW_RebocoRachado",
+	-- O primeiro reboco gerado saiu com padrão em FAIXAS HORIZONTAIS: numa
+	-- parede de 22 studs lia como tábua, não como reboco. Refeito pedindo
+	-- explicitamente parede corrida sem linha horizontal.
+	[Enum.Material.Plaster] = "AW_RebocoLiso",
 	[Enum.Material.Snow] = "AW_NevePisada",
 }
 

@@ -1,6 +1,6 @@
 --!strict
 -- Tavern.lua  (SERVIDOR)
--- A TAVERNA — a primeira construção do mapa em que o jogador ENTRA.
+-- AS CONSTRUÇÕES EM QUE O JOGADOR ENTRA: a taverna e as casas habitadas.
 --
 -- POR QUE ELA NÃO É UMA CASA DO KIT. As casas da cidade são malhas prontas:
 -- ótimas de fora, mas são cascas fechadas — a parede é uma Union só, não dá pra
@@ -168,14 +168,21 @@ function Tavern.build()
 	end
 
 	-- ---- enxaimel: vigas aparentes quebrando a parede de pedra ----
+	-- PULA O VÃO DA PORTA. O laço ia de -2 a 2 e a viga i = 0 caía exatamente no
+	-- meio da entrada: de fora parecia enfeite, mas era uma barra sólida de 14
+	-- studs atravessando a porta. A taverna tinha interior e ninguém conseguia
+	-- entrar. Pego por raycast na validação, não a olho nu.
 	for i = -2, 2 do
-		Build.part({
-			Size = Vector3.new(0.7, WALL_H, 0.7),
-			CFrame = base * CFrame.new(i * (W / 5.2), WALL_H / 2, D / 2 + 0.5),
-			Color = C.TIMBER,
-			Material = Enum.Material.Wood,
-			CanCollide = false,
-		})
+		local vx = i * (W / 5.2)
+		if math.abs(vx) > DOOR_W / 2 + 0.8 then
+			Build.part({
+				Size = Vector3.new(0.7, WALL_H, 0.7),
+				CFrame = base * CFrame.new(vx, WALL_H / 2, D / 2 + 0.5),
+				Color = C.TIMBER,
+				Material = Enum.Material.Wood,
+				CanCollide = false,
+			})
+		end
 	end
 
 	-- ---- telhado de duas águas ----
@@ -362,6 +369,155 @@ function Tavern.build()
 	-- SOLEIRA limpa na frente: quem entra não escala neve
 	local soleira = base * Vector3.new(0, 0, D / 2 + 4)
 	Build.paintGround(soleira.X, soleira.Z, 12, Enum.Material.Cobblestone)
+end
+
+-- ================================================================ CASA HABITADA
+-- Mesma ideia da taverna, em escala de moradia: casca construída (pra ter o vão
+-- da porta) e recheio de asset. São poucas no mapa de propósito — a maioria das
+-- casas continua sendo a malha do kit, que é mais bonita de fora e mais barata.
+-- Estas existem pra o jogador poder ENTRAR em alguma coisa no bairro, não só na
+-- taverna.
+Tavern.CASA_W = 22
+Tavern.CASA_D = 18
+Tavern.CASA_CLEAR = 22
+
+function Tavern.buildCasa(pos: Vector3, rotGraus: number, quente: boolean)
+	local W, D = Tavern.CASA_W, Tavern.CASA_D
+	local H = 11
+	local portaW, portaH = 6, 9
+	local base = CFrame.new(pos.X, Build.GROUND_LEVEL, pos.Z) * CFrame.Angles(0, math.rad(rotGraus), 0)
+	local pedra = Build.tint(C.STONE, 0.05)
+	local reboco = Build.tint(C.PLASTER, 0.05)
+
+	Build.paintGround(pos.X, pos.Z, math.max(W, D) + 6, Enum.Material.Cobblestone)
+
+	-- alicerce e assoalho
+	Build.part({
+		Size = Vector3.new(W + 1.8, 1.4, D + 1.8),
+		CFrame = base * CFrame.new(0, -0.25, 0),
+		Color = C.STONE_DARK,
+		Material = Enum.Material.Cobblestone,
+	})
+	Build.part({
+		Size = Vector3.new(W - T * 2, 0.4, D - T * 2),
+		CFrame = base * CFrame.new(0, 0.65, 0),
+		Color = C.WOOD_DARK,
+		Material = Enum.Material.WoodPlanks,
+	})
+
+	-- paredes: pedra até a cintura, reboco acima (leitura de enxaimel)
+	paredeComVao(base * CFrame.new(0, 0, D / 2), W, H, portaW, portaH, pedra, Enum.Material.Cobblestone)
+	Build.part({
+		Size = Vector3.new(W, H, T),
+		CFrame = base * CFrame.new(0, H / 2, -D / 2),
+		Color = reboco,
+		Material = Enum.Material.Plaster,
+	})
+	for _, sx in { -1, 1 } do
+		Build.part({
+			Size = Vector3.new(D, H, T),
+			CFrame = base * CFrame.new(sx * W / 2, H / 2, 0) * CFrame.Angles(0, math.pi / 2, 0),
+			Color = reboco,
+			Material = Enum.Material.Plaster,
+		})
+		-- janelinha acesa
+		Build.part({
+			Size = Vector3.new(3.4, 2.8, 0.25),
+			CFrame = base * CFrame.new(sx * (W / 2 + 0.1), 6.2, 2) * CFrame.Angles(0, math.pi / 2, 0),
+			Color = C.WINDOW,
+			Material = Enum.Material.Glass,
+			Transparency = 0.4,
+			CanCollide = false,
+			CastShadow = false,
+		})
+	end
+	-- soco escuro na base, como nas casas do kit
+	Build.part({
+		Size = Vector3.new(W + 0.3, 2.2, D + 0.3),
+		CFrame = base * CFrame.new(0, 1.1, 0),
+		Color = pedra,
+		Material = Enum.Material.Cobblestone,
+		CanCollide = false,
+	})
+
+	-- telhado + oitão
+	local rh = 6
+	local half = W / 2 + 1.0
+	local slope = math.sqrt(half * half + rh * rh)
+	local pitch = math.atan2(rh, half)
+	for _, s2 in { -1, 1 } do
+		Build.part({
+			Size = Vector3.new(slope, 0.6, D + 2.4),
+			CFrame = base * CFrame.new(s2 * (half / 2), H + rh / 2, 0) * CFrame.Angles(0, 0, -s2 * pitch),
+			Color = Build.tint(C.ROOF_TILE, 0.05),
+			Material = Enum.Material.Slate,
+		})
+		Build.part({
+			Size = Vector3.new(slope * 0.86, 0.3, D + 1.8),
+			CFrame = base * CFrame.new(s2 * (half / 2), H + rh / 2 + 0.45, 0) * CFrame.Angles(0, 0, -s2 * pitch),
+			Color = C.SNOW,
+			Material = Enum.Material.Snow,
+			CanCollide = false,
+			CastShadow = false,
+		})
+	end
+	local faixas = 5
+	for _, sz in { -1, 1 } do
+		for i = 0, faixas - 1 do
+			local t0, t1 = i / faixas, (i + 1) / faixas
+			Build.part({
+				Size = Vector3.new(W * (1 - (t0 + t1) / 2), rh / faixas + 0.05, T),
+				CFrame = base * CFrame.new(0, H + rh * (t0 + t1) / 2, sz * D / 2),
+				Color = reboco,
+				Material = Enum.Material.Plaster,
+			})
+		end
+	end
+	-- chaminé
+	Build.part({
+		Size = Vector3.new(2.4, H + rh + 4, 2.4),
+		CFrame = base * CFrame.new(-W / 2 + 3, (H + rh + 4) / 2, -D / 2 + 2.6),
+		Color = C.STONE_DARK,
+		Material = Enum.Material.Cobblestone,
+	})
+
+	-- ---- interior ----
+	local dentro = base * CFrame.new(0, 0.85, 0)
+	local lx, lz = -W / 2 + 3, -D / 2 + 2.6
+	Build.part({ -- boca da lareira
+		Size = Vector3.new(3.4, 2.6, 1.0),
+		CFrame = dentro * CFrame.new(lx, 1.4, lz + 1.6),
+		Color = Color3.fromRGB(14, 12, 11),
+		Material = Enum.Material.Slate,
+		CanCollide = false,
+	})
+	if quente then
+		Build.fire((dentro * CFrame.new(lx, 1.0, lz + 1.5)).Position, 0.75, 18)
+	end
+
+	mob("Smal Round Table", dentro * CFrame.new(2, 0, -1), 1.0)
+	mob("Smal Seat", dentro * CFrame.new(-1.4, 0, -1) * CFrame.Angles(0, math.pi / 2, 0), 1.0)
+	mob("Smal Seat", dentro * CFrame.new(5.4, 0, -1) * CFrame.Angles(0, -math.pi / 2, 0), 1.0)
+	mob("Cabinet", dentro * CFrame.new(W / 2 - 3, 0, -D / 2 + 3) * CFrame.Angles(0, -math.pi / 2, 0), 0.9)
+	mob("Chest", dentro * CFrame.new(W / 2 - 3.5, 0, 4) * CFrame.Angles(0, -math.pi / 2, 0), 0.9)
+	mob("Carpet_3", dentro * CFrame.new(1, 0, 3), 1.6)
+	mob("Candles", dentro * CFrame.new(2, 2.1, -1), 0.7)
+
+	-- luz interna quente
+	local vela = Build.part({
+		Size = Vector3.new(0.4, 0.4, 0.4),
+		CFrame = dentro * CFrame.new(1, 6.4, 0),
+		Color = C.FIRE,
+		Material = Enum.Material.Neon,
+		CanCollide = false,
+		CastShadow = false,
+		Transparency = 0.5,
+	})
+	Build.light(vela, Color3.fromRGB(255, 198, 138), 1.7, 26)
+
+	-- soleira limpa
+	local soleira = base * Vector3.new(0, 0, D / 2 + 3)
+	Build.paintGround(soleira.X, soleira.Z, 9, Enum.Material.Cobblestone)
 end
 
 return Tavern

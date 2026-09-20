@@ -641,6 +641,17 @@ local FORGES = {
 }
 local FORGE_CLEAR = 24
 
+-- CASAS EM QUE SE ENTRA.
+-- São poucas de propósito: a maioria do bairro continua sendo a malha do kit,
+-- que é mais bonita de fora e muito mais barata. Estas três existem pra o
+-- jogador ter onde entrar sem precisar ir até a taverna, e ficam espalhadas —
+-- uma por bairro — em vez de enfileiradas.
+local HABITADAS = {
+	{ pos = Vector3.new(86, 0, -58), rot = 186, quente = true },
+	{ pos = Vector3.new(-102, 0, -16), rot = 8, quente = true },
+	{ pos = Vector3.new(72, 0, 12), rot = 172, quente = false },
+}
+
 local function canPlace(x: number, z: number, w: number, d: number): boolean
 	local reach = math.max(w, d) / 2 + 3
 	if math.sqrt(x * x + z * z) + reach > INNER_LIMIT then
@@ -672,6 +683,13 @@ local function canPlace(x: number, z: number, w: number, d: number): boolean
 	local tx, tz = x - Tavern.POS.X, z - Tavern.POS.Z
 	if math.sqrt(tx * tx + tz * tz) < Tavern.CLEAR + reach then
 		return false
+	end
+	-- idem pras casas em que se entra
+	for _, h in HABITADAS do
+		local hx, hz = x - h.pos.X, z - h.pos.Z
+		if math.sqrt(hx * hx + hz * hz) < Tavern.CASA_CLEAR + reach then
+			return false
+		end
 	end
 	return true
 end
@@ -1102,6 +1120,9 @@ function Town.build()
 		Forge.build(f.pos, f.rot)
 	end
 	Tavern.build()
+	for _, h in HABITADAS do
+		Tavern.buildCasa(h.pos, h.rot, h.quente)
+	end
 	buildDistricts()
 	buildKeep()
 
