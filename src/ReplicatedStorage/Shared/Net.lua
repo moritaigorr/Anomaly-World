@@ -13,6 +13,8 @@ local REMOTES = {
 	"UltimateRequest",-- cliente -> servidor : ultimate (G)
 	"PowerRequest",   -- cliente -> servidor : poder da Core (Z/X/C/V)
 	"SwapCoreRequest",-- cliente -> servidor : trocar de Anomaly Core (T)
+	"EquipWeaponRequest", -- cliente -> servidor : equipar/desequipar arma (inventário)
+	"BowShootRequest", -- cliente -> servidor : disparo do arco (mira, após o draw)
 	"SprintRequest",  -- cliente -> servidor : correr (segurar Shift)
 	"MountRequest",   -- cliente -> servidor : montar/desmontar (H)
 	"CombatFeedback", -- servidor -> cliente : impacto, números de dano, VFX

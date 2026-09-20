@@ -1,11 +1,16 @@
 --!strict
 -- InventoryController.lua  (CLIENTE)
--- Barra de inventário no centro inferior da tela. Quatro armas de verdade
--- (espada, adaga, machado, martelo — o CombatStance sabe desenhar/soldar
--- cada uma na mão), mais dois slots vazios reservados pra próximos itens.
+-- Barra de inventário no centro inferior da tela. Cinco armas de verdade
+-- (espada, adaga, machado, martelo, arco — o CombatStance sabe desenhar/
+-- soldar cada uma na mão), mais um slot vazio reservado pra próximo item.
 -- Só uma arma fica equipada por vez: clicar numa nova guarda a anterior
 -- sozinho. Clicar ou apertar a tecla numérica pega/guarda, independente do
 -- lock do R.
+--
+-- A arma equipada é decidida pelo SERVIDOR (GearService), não aqui — desde
+-- que gear passou a ter dano/alcance próprios, isso deixou de ser só visual.
+-- Este controller só PEDE (EquipWeaponRequest) e depois desenha o que o
+-- servidor confirmar via StateUpdate, igual o HudController já faz pra Core.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -13,6 +18,10 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 
 local CombatStance = require(ReplicatedStorage.Shared.CombatStance)
+local Net = require(ReplicatedStorage.Shared.Net)
+
+local EquipWeaponRequest = Net.get("EquipWeaponRequest")
+local StateUpdate = Net.get("StateUpdate")
 
 local player = Players.LocalPlayer
 
@@ -44,7 +53,8 @@ local SLOT_KEYS = {
 
 local InventoryController = {}
 
-local equippedWeapon: string? = nil
+local equippedWeapon: string? = nil -- último valor confirmado pelo servidor
+local lastSyncedCharacter: Model? = nil -- personagem em que equippedWeapon já foi desenhado
 local weaponRings: { [string]: UIStroke } = {}
 local weaponIconParts: { [string]: { GuiObject } } = {}
 local slotActions: { [number]: () -> () } = {}
@@ -163,18 +173,35 @@ local function refreshAllWeaponSlots()
 	end
 end
 
--- só uma arma equipada por vez: escolher uma nova guarda a anterior sozinha
--- (o próprio CombatStance já esconde a antiga ao equipar outra); clicar na
--- que já está equipada guarda ela.
+-- só PEDE ao servidor pra trocar de arma. Quem decide (e o que os outros
+-- veem, via replicação normal do Roblox) é o GearService — a barra só
+-- reflete o que voltar em StateUpdate (ver syncWeapon abaixo).
 local function selectWeapon(weaponId: string)
+	EquipWeaponRequest:FireServer(weaponId)
+end
+
+-- desenha a arma confirmada pelo servidor na mão do personagem ATUAL.
+-- Reaplica sempre que o personagem muda (respawn) mesmo se a arma continuar
+-- a mesma, porque o modelo soldado por CombatStance morre junto do corpo
+-- antigo — e ignora chamadas repetidas quando nada mudou.
+local function syncWeapon(newWeapon: string?)
 	local character = player.Character
-	if equippedWeapon == weaponId then
-		CombatStance.setWeaponActive(character, weaponId, false)
-		equippedWeapon = nil
-	else
-		CombatStance.setWeaponActive(character, weaponId, true)
-		equippedWeapon = weaponId
+	local charChanged = character ~= lastSyncedCharacter
+	if newWeapon == equippedWeapon and not charChanged then
+		return
 	end
+
+	if character then
+		if not charChanged and equippedWeapon and equippedWeapon ~= newWeapon then
+			CombatStance.setWeaponActive(character, equippedWeapon, false)
+		end
+		if newWeapon then
+			CombatStance.setWeaponActive(character, newWeapon, true)
+		end
+	end
+
+	equippedWeapon = newWeapon
+	lastSyncedCharacter = character
 	refreshAllWeaponSlots()
 end
 
@@ -382,11 +409,11 @@ function InventoryController.Start()
 		end
 	end)
 
-	-- personagem novo (spawn/respawn): a arma some (CombatStance recomeça do
-	-- zero pra esse personagem) então a barra também volta pro estado guardado
-	player.CharacterAdded:Connect(function()
-		equippedWeapon = nil
-		refreshAllWeaponSlots()
+	-- fonte de verdade da arma equipada: o servidor. Isto também cobre
+	-- respawn (o StateUpdate seguinte chega com o personagem novo e
+	-- syncWeapon re-solda a arma sozinha, sem precisar de CharacterAdded).
+	StateUpdate.OnClientEvent:Connect(function(data)
+		syncWeapon(data.weapon)
 	end)
 
 	print("[InventoryController] pronto — clique ou tecla numérica pra trocar de arma")

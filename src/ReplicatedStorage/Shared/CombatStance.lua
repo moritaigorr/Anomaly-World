@@ -12,6 +12,9 @@
 -- O arco é a exceção: BowPose.lua trava a pose lateral e a mão traseira via
 -- IKControl (que já foi feito pra esse rig), em vez de escrever C0 direto.
 
+local RunService = game:GetService("RunService")
+local BowPose = require(script.Parent.BowPose)
+
 local CombatStance = {}
 
 local SWORD_COLOR = Color3.fromRGB(205, 210, 220)
@@ -342,7 +345,21 @@ local function buildBow(leftHand: BasePart): Model
 	model:SetAttribute("DesignVersion", 2)
 	model:SetAttribute("GripHand", "Left")
 
-	local baseCFrame = leftHand.CFrame * CFrame.new(0, -0.02, 0.06) * CFrame.Angles(math.rad(-90), 0, 0)
+	local pivot = leftHand.CFrame * CFrame.new(0, -0.02, 0.06)
+
+	-- o arco fica em pé, na VERTICAL ao lado do corpo (eixo dos membros
+	-- alinhado ao "pra cima" do mundo) — seguir o ângulo cru da mão deixava
+	-- o arco quase deitado, atravessando a perna. O outro eixo acompanha pra
+	-- onde o personagem olha, pra corda não ficar de costas pro jogador.
+	-- `Grip` nasce em `baseCFrame * Angles(0,0,90)` mais abaixo, então a
+	-- rotação de -90 aqui cancela essa e deixa o eixo dos membros (Y local
+	-- de baseCFrame) apontando pra cima do mundo. Durante o saque/mira,
+	-- BowPose.update() reorienta o Grip de novo com a mesma lógica.
+	local character = leftHand.Parent
+	local hrp = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local baseCFrame = if hrp
+		then CFrame.fromMatrix(pivot.Position, Vector3.new(0, 1, 0), hrp.CFrame.LookVector) * CFrame.Angles(0, 0, math.rad(-90))
+		else pivot * CFrame.Angles(math.rad(-90), 0, 0)
 
 	local function addPart(name: string, size: Vector3, material: Enum.Material, color: Color3, cf: CFrame): Part
 		local part = Instance.new("Part")
@@ -529,6 +546,49 @@ local function setAuraVisible(gear: Gear, visible: boolean)
 	end
 end
 
+-- ================= arco: manter em pé enquanto anda/parado =================
+-- O Grip do arco é soldado à mão com um offset FIXO (Motor6D.C0) — bom pra
+-- espada/machado/etc, mas a mão balança sozinha nas animações de parado/
+-- andar (idle sway, passo), e isso arrasta o arco junto pra fora da vertical
+-- (voltando a atravessar a perna). Em vez de prender o braço com IK (isso
+-- fazia a mão "grudar" durante a caminhada — removido antes), só o Motor6D
+-- do Grip é recalculado every frame, sempre mirando pra cima; a mão em si
+-- continua livre, tocando a animação normal. Durante o saque/mira,
+-- BowPose.update() já faz a mesma coisa (e manda mais), então aqui a gente
+-- sai do caminho.
+local bowUpkeepConnections: { [Model]: RBXScriptConnection } = setmetatable({}, { __mode = "k" }) :: any
+
+local function stopBowUpkeep(character: Model)
+	local connection = bowUpkeepConnections[character]
+	if connection then
+		connection:Disconnect()
+		bowUpkeepConnections[character] = nil
+	end
+end
+
+local function startBowUpkeep(character: Model, leftHand: BasePart)
+	stopBowUpkeep(character)
+	bowUpkeepConnections[character] = RunService.RenderStepped:Connect(function()
+		if not leftHand.Parent or not character.Parent then
+			stopBowUpkeep(character)
+			return
+		end
+		if BowPose.isActive(character) then
+			return -- saque/mira em andamento: o BowPose manda no Grip agora
+		end
+		local bow = character:FindFirstChild("AnomalyBow")
+		local hrp = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local grip = bow and bow:FindFirstChild("Grip") :: BasePart?
+		local gripMotor = grip and grip:FindFirstChild("BowGripMotor") :: Motor6D?
+		if not (hrp and grip and gripMotor) then
+			return
+		end
+		local pivot = (leftHand.CFrame * CFrame.new(0, -0.02, 0.06)).Position
+		local target = CFrame.fromMatrix(pivot, Vector3.new(0, 1, 0), hrp.CFrame.LookVector)
+		gripMotor.C0 = leftHand.CFrame:ToObjectSpace(target)
+	end)
+end
+
 -- equipa/guarda uma arma pelo id (CombatStance.WeaponOrder). Só uma arma
 -- fica visível por vez — equipar uma nova guarda a anterior sozinha.
 function CombatStance.setWeaponActive(character: Model?, weaponId: string, active: boolean)
@@ -572,6 +632,12 @@ function CombatStance.setWeaponActive(character: Model?, weaponId: string, activ
 			setPartsVisible(model, false)
 		end
 		gear.equipped = nil
+	end
+
+	if gear.equipped == "bow" then
+		startBowUpkeep(character, leftHand)
+	else
+		stopBowUpkeep(character)
 	end
 end
 

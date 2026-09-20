@@ -60,6 +60,7 @@ function BowAttack.shoot(character: Model?, camera: Camera?, fireServer: (Vector
 		repeat
 			if not character.Parent or not character:FindFirstChild("AnomalyBow") then
 				if preview.Parent then preview:Destroy() end
+				BowPose.deactivate(character)
 				busy[character] = nil
 				return
 			end
@@ -70,6 +71,10 @@ function BowAttack.shoot(character: Model?, camera: Camera?, fireServer: (Vector
 		fireServer(aim, "bow")
 		BowPose.setDrawAmount(character, 0, 0.16)
 		task.wait(0.18)
+		-- a pose (postura de lado, braços em IK) é só do saque/disparo — fora
+		-- disso os braços voltam pro Animate normal, senão a mão de trás fica
+		-- "grudada" na posição do arco e estranha enquanto o jogador anda.
+		BowPose.deactivate(character)
 		busy[character] = nil
 	end)
 	return true

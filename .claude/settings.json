@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git ls-remote *)",
+      "mcp__roblox-studio__list_roblox_studios",
+      "mcp__roblox-studio__execute_luau",
+      "Bash(tasklist)",
+      "Bash(tasklist //FI \"IMAGENAME eq rojo.exe\")",
+      "mcp__roblox-studio__get_studio_state",
+      "mcp__roblox-studio__start_stop_play",
+      "mcp__roblox-studio__get_console_output",
+      "mcp__roblox-studio__screen_capture",
+      "Bash(powershell -Command 'Get-Process | Where-Object { $_.ProcessName -like '\\\\''*rojo*'\\\\'' } | Select-Object ProcessName, Id, StartTime')",
+      "Bash(curl -s http://localhost:34872/api/rojo)"
+    ]
+  }
+}

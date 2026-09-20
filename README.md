@@ -84,6 +84,7 @@ src/
 ├─ ReplicatedStorage/Shared/   -- código puro compartilhado
 │  ├─ Constants.lua            -- TODO o tuning (mexa aqui pra balancear)
 │  ├─ CoreData.lua             -- dados das Anomaly Cores
+│  ├─ WeaponData.lua           -- dados das armas (dano/alcance/velocidade)
 │  ├─ BossData.lua             -- fases + drops do boss
 │  ├─ CreatureData.lua         -- criaturas comuns data-driven
 │  ├─ MountData.lua            -- montarias
@@ -100,6 +101,7 @@ src/
 │     ├─ CombatService.lua     -- golpe M1 / F / ultimate
 │     ├─ MovementService.lua   -- esquiva + corrida + stamina
 │     ├─ CoreService.lua       -- poderes Z/X/C/V
+│     ├─ GearService.lua       -- dono da arma equipada (EquipWeaponRequest)
 │     ├─ WorldService.lua      -- constrói a área + iluminação/atmosfera
 │     ├─ World/*.lua           -- muralha, cidade, porto, floresta, terreno...
 │     ├─ EnemyService.lua      -- spawn + IA das criaturas (data-driven)
@@ -116,7 +118,7 @@ src/
       ├─ HudController.lua      -- HP/stamina/cooldowns/database
       ├─ MountController.lua    -- animação da montaria
       ├─ AuraController.lua     -- efeito visual por Core equipada
-      └─ InventoryController.lua-- UI de troca de arma (hoje só visual)
+      └─ InventoryController.lua-- UI de troca de arma (pede ao servidor)
 ```
 
 ## Princípio inquebrável
@@ -135,8 +137,9 @@ alcance e mira e aplica o resultado. É isso que segura o jogo contra cheat.
 | Boss O Draugr-Rei | ✅ maduro, 4 fases |
 | Criaturas comuns | ✅ funcional, IA simples |
 | Montarias | ✅ maduro |
-| Save (DataStore) | ⚠️ funcional, mas não salva a arma equipada nem sobrevive à falta de ProfileService |
-| Arco / gear de armas | ⚠️ módulos prontos, **não conectados ao input do jogador** (arma trocada no inventário é só visual, dano continua vindo das Cores) |
+| Save (DataStore) | ⚠️ funcional, salva a arma equipada; ainda não sobrevive à falta de ProfileService |
+| Gear (espada/adaga/machado/martelo) | ✅ funcional — dano/alcance/velocidade próprios por arma, servidor-autoritativo |
+| Arco | ⚠️ cadastrado em `WeaponData.lua`, módulos de mira/pose/projétil prontos, **ainda sem disparo real** |
 | Barra de postura no HUD | 🐛 existe na UI, mas o servidor não envia esse dado — nunca atualiza |
 | Drops de boss | ⚠️ coletados e salvos, sem uso (sem loja/crafting) |
 | Backup dos modelos 3D | 🐛 só existem no `.rbxl`, fora do git (ver seção acima) |
@@ -147,10 +150,13 @@ Ver `ROADMAP.md` para os marcos do projeto e o que falta pra fechar o atual.
 
 ## Onde mexer primeiro
 
-- **Sensação ruim?** → `Constants.lua` (dano, alcance, cooldowns, velocidade dos slimes)
-  e `CombatController.lua` (shake, hit-stop, números).
+- **Sensação ruim?** → `Constants.lua` (fallback desarmado, cooldowns,
+  velocidade dos slimes) e `CombatController.lua` (shake, hit-stop, números).
+- **Balancear uma arma?** → `WeaponData.lua` (dano/alcance/velocidade por
+  arma). Arma nova = só adicionar uma tabela lá, nos moldes das que já
+  existem.
 - **Nova Core?** → só adicione uma tabela em `CoreData.lua`. A lógica genérica de
   Z/X/C/V já lê de lá.
-- **Terminar o arco?** → plugar `BowAttack.shoot` no `InputController`, criar
-  validação de dano de projétil no servidor (`CombatUtil`), e decidir se armas
-  passam a ter stats próprios ou continuam cosméticas.
+- **Terminar o arco?** → plugar `BowAttack.shoot` no `InputController` e criar
+  validação de dano de projétil no servidor (`CombatUtil`). Os stats já têm
+  lugar reservado em `WeaponData.bow`.

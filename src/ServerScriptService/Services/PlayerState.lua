@@ -25,6 +25,7 @@ export type State = {
 	-- HOJE NADA O ESCREVE — é um hook, não um sistema ativo.
 	stunUntil: number,
 	heavyCdUntil: number,  -- cooldown do ataque pesado
+	bowCdUntil: number,    -- cooldown entre disparos do arco
 	ultCharge: number,     -- carga do ultimate
 	comboIndex: number,
 	comboUntil: number,    -- janela pra continuar o combo
@@ -32,6 +33,7 @@ export type State = {
 	formBuffUntil: number, -- Thunder Form ativo até quando
 	formBuffMult: number,
 	equippedCore: string,
+	equippedWeapon: string?, -- id em WeaponData, ou nil = desarmado
 	mastery: number,
 	money: number,
 	bossKills: number,
@@ -54,6 +56,7 @@ function PlayerState.init(player: Player)
 		mountCdUntil = 0,
 		stunUntil = 0,
 		heavyCdUntil = 0,
+		bowCdUntil = 0,
 		ultCharge = 0,
 		comboIndex = 0,
 		comboUntil = 0,
@@ -61,6 +64,7 @@ function PlayerState.init(player: Player)
 		formBuffUntil = 0,
 		formBuffMult = 1,
 		equippedCore = "Thunder", -- todo mundo começa com a Thunder no protótipo
+		equippedWeapon = nil, -- começa desarmado
 		mastery = 0,
 		money = 0,
 		bossKills = 0,

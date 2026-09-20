@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local Net = require(ReplicatedStorage.Shared.Net)
+local BowAttack = require(ReplicatedStorage.Shared.BowAttack)
 
 local AttackRequest = Net.get("AttackRequest")
 local DashRequest = Net.get("DashRequest")
@@ -18,6 +19,7 @@ local UltimateRequest = Net.get("UltimateRequest")
 local SwapCoreRequest = Net.get("SwapCoreRequest")
 local SprintRequest = Net.get("SprintRequest")
 local MountRequest = Net.get("MountRequest")
+local BowShootRequest = Net.get("BowShootRequest")
 
 local player = Players.LocalPlayer
 
@@ -46,6 +48,18 @@ local function moveDirection(): Vector3
 end
 
 local function attack()
+	local character = player.Character
+	-- com o arco na mão, o M1 saca e atira em vez do golpe corpo a corpo.
+	-- BowAttack.shoot já recusa sozinho (retorna false) quando o personagem
+	-- não tem o modelo AnomalyBow soldado — não precisamos checar a arma
+	-- equipada aqui de novo, só reagir ao resultado.
+	local started = BowAttack.shoot(character, Workspace.CurrentCamera, function(aim: Vector3)
+		BowShootRequest:FireServer(aim)
+	end)
+	if started then
+		return
+	end
+
 	AttackRequest:FireServer()
 	if CombatController then
 		CombatController.predictSwing() -- feedback imediato no cliente

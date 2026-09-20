@@ -18,14 +18,19 @@ Constants.Player = {
 	LifestealOnKill = 12,    -- cura ao matar um inimigo
 }
 
+-- DESARMADO: fallback de golpe de mão vazia, usado só quando não há arma
+-- equipada (ver WeaponData.lua). Os números "de verdade" de cada arma
+-- moraram pra lá — espada, a arma padrão, tem os valores que estes campos
+-- tinham antes de existir gear funcional. Fraco de propósito: incentiva
+-- sempre ter uma arma equipada.
 Constants.Melee = {
-	BaseDamage = 10,
-	Range = 9,            -- studs de alcance do golpe
-	Arc = 0.35,          -- dot mínimo (frente do personagem). 1 = só reto, 0 = 180°
-	CooldownPerHit = 0.28, -- ritmo do combo
+	BaseDamage = 4,
+	Range = 6,            -- studs de alcance do golpe
+	Arc = 0.40,          -- dot mínimo (frente do personagem). 1 = só reto, 0 = 180°
+	CooldownPerHit = 0.35, -- ritmo do combo
 	ComboWindow = 0.9,   -- tempo pra encadear o próximo golpe
-	ComboMult = { 1.0, 1.0, 1.35, 1.6 }, -- multiplicador por passo do combo
-	KnockbackFinal = 45, -- knockback no último golpe do combo
+	ComboMult = { 1.0, 1.0, 1.2, 1.3 }, -- multiplicador por passo do combo
+	KnockbackFinal = 20, -- knockback no último golpe do combo
 }
 
 Constants.Dash = {
@@ -47,14 +52,15 @@ Constants.Combat = {
 -- outro sistema — mora em atributos no Model (Constants.Enemy.Posture) e quem
 -- a quebra é o ataque pesado (F) e o ultimate.
 
--- ATAQUE PESADO (F): lento, forte, e quebra a guarda do inimigo.
+-- ATAQUE PESADO (F) DESARMADO: mesmo fallback fraco do Melee acima, só usado
+-- sem arma equipada. Ver WeaponData.lua pros valores de cada arma.
 Constants.Heavy = {
-	Damage = 26,
-	Cooldown = 1.1,
-	Range = 10,
-	Arc = 0.25,
-	PostureDamage = 45,   -- dano na guarda do inimigo
-	Knockback = 60,
+	Damage = 14,
+	Cooldown = 1.3,
+	Range = 7,
+	Arc = 0.30,
+	PostureDamage = 25,   -- dano na guarda do inimigo
+	Knockback = 35,
 }
 
 -- ULTIMATE (G): enche BATENDO (o parry, que também carregava, não existe mais).

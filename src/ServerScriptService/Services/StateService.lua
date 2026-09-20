@@ -51,6 +51,7 @@ function StateService.Start()
 						mounted = s.mounted,
 						coreName = core and core.nome or s.equippedCore,
 						coreColor = core and core.cor,
+						weapon = s.equippedWeapon,
 						database = s.database,
 						cooldowns = cds,
 					})

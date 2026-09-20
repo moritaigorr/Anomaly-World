@@ -51,6 +51,9 @@ local function apply(player: Player, data: { [string]: any })
 	if type(data.equippedCore) == "string" then
 		s.equippedCore = data.equippedCore
 	end
+	if type(data.equippedWeapon) == "string" then
+		s.equippedWeapon = data.equippedWeapon
+	end
 end
 
 -- monta a tabela a salvar a partir do estado atual
@@ -66,6 +69,7 @@ local function snapshot(player: Player): { [string]: any }?
 		inventory = s.inventory,
 		database = s.database,
 		equippedCore = s.equippedCore,
+		equippedWeapon = s.equippedWeapon,
 	}
 end
 

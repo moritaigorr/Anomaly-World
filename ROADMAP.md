@@ -24,14 +24,18 @@ Diferente do Marco 0, aqui não é sistema novo: é terminar o que já foi
 começado e consertar o que ficou capenga.
 
 ### Combate e gear
-- [ ] **Gear funcional** (decidido): cada arma (espada, machado, martelo, arco)
-      passa a ter seus próprios dano/alcance/velocidade, em vez de tudo vir só
-      das Anomaly Cores. Precisa de uma tabela de stats por arma (nos moldes
-      de `CoreData.lua`) e o `CombatService`/`CombatUtil` passam a ler a arma
-      equipada, não só constantes fixas.
-- [ ] **Plugar o arco no gameplay real**: `BowAttack.shoot` chamado pelo
-      `InputController`, validação de dano de projétil no servidor. Hoje só
-      roda isolado em `LongbowSpec.lua` (teste).
+- [x] **Gear funcional** — espada, adaga, machado e martelo têm dano/
+      alcance/velocidade próprios (`WeaponData.lua`), lidos pelo
+      `CombatService` a partir da arma equipada no servidor (`GearService.lua`
+      + `EquipWeaponRequest`), não mais de constantes fixas. Persistida em
+      `DataService` e sincronizada de volta pro cliente via `StateUpdate`. O
+      arco já tem entrada na tabela (`ranged = true`) mas continua sem golpe
+      — ver item abaixo.
+- [x] **Plugar o arco no gameplay real**: `BowAttack.shoot` chamado pelo
+      `InputController` (M1 saca/atira quando o arco está na mão). O
+      `CombatService` valida arma/cooldown/alcance no servidor e só aplica
+      dano quando a flecha física encosta num inimigo (`Touched`, servidor
+      dono da física via `SetNetworkOwner(nil)`).
 - [ ] **Consertar a barra de postura no HUD**: `StateService` precisa enviar
       `posture`/`maxPosture` no payload (hoje a UI lê um dado que nunca chega).
 
