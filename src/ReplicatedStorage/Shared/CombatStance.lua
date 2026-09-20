@@ -5,12 +5,12 @@
 -- poder na mão esquerda. Só visual — o dano continua vindo só da habilidade
 -- (Z/X/C/V), não da arma. Protótipo cinza, sem malha/animação importada.
 --
--- NOTA: sem pose de braço. O avatar atual do Roblox usa um rig novo com
--- AnimationConstraint + BallSocketConstraint (fisicamente simulado) em vez
--- do Motor6D clássico — escrever o CFrame dos braços à força briga com essa
--- física e arremessa o personagem pelo mapa. Uma pose de guarda de verdade,
--- nesse rig, precisa de uma Animation de verdade (Studio -> Avatar ->
--- Animation Editor) tocada pelo Animator. Fica pro próximo passo.
+-- NOTA: sem pose de braço pra espada/adaga/machado/martelo. O avatar atual do
+-- Roblox usa um rig novo com AnimationConstraint + BallSocketConstraint
+-- (fisicamente simulado) em vez do Motor6D clássico — escrever o CFrame dos
+-- braços à força briga com essa física e arremessa o personagem pelo mapa.
+-- O arco é a exceção: BowPose.lua trava a pose lateral e a mão traseira via
+-- IKControl (que já foi feito pra esse rig), em vez de escrever C0 direto.
 
 local CombatStance = {}
 
@@ -50,14 +50,23 @@ end
 -- da mão em vez do Y errado. Compartilhada por todas as armas abaixo.
 local GRIP_TRANSFORM = CFrame.new(0, -0.02, 0.06) * CFrame.Angles(math.rad(-90), 0, math.rad(8))
 
-local function finishWeapon(model: Model, rightHand: BasePart, primary: BasePart)
+local function finishWeapon(model: Model, hostHand: BasePart, primary: BasePart)
 	for _, piece in model:GetChildren() do
-		local part = piece :: BasePart
-		weldTo(rightHand, part)
-		part.Transparency = 1 -- começa guardada; só aparece quando equipada
+		if piece:IsA("BasePart") then
+			if piece:GetAttribute("DynamicPart") then
+				piece.Anchored = true
+				piece.CanCollide = false
+				piece.CanQuery = false
+				piece.CanTouch = false
+				piece.CastShadow = false
+			else
+				weldTo(hostHand, piece)
+			end
+			piece.Transparency = 1
+		end
 	end
 	model.PrimaryPart = primary
-	model.Parent = rightHand.Parent
+	model.Parent = hostHand.Parent
 end
 
 -- ============================== armas ==============================
@@ -327,106 +336,101 @@ end
 -- de segmentos retos encadeados, indo do cabo até a ponta) + a corda esticada
 -- ligando as duas pontas. Sem malha, então a curva é aproximada — dá pro
 -- protótipo cinza.
-local function buildBow(rightHand: BasePart): Model
+local function buildBow(leftHand: BasePart): Model
 	local model = Instance.new("Model")
 	model.Name = "AnomalyBow"
+	model:SetAttribute("DesignVersion", 2)
+	model:SetAttribute("GripHand", "Left")
 
-	local baseCFrame = rightHand.CFrame * GRIP_TRANSFORM
+	local baseCFrame = leftHand.CFrame * CFrame.new(0, -0.02, 0.06) * CFrame.Angles(math.rad(-90), 0, 0)
 
-	local grip = Instance.new("Part")
-	grip.Name = "Grip"
-	grip.Shape = Enum.PartType.Cylinder
-	grip.Size = Vector3.new(0.5, 0.14, 0.2)
-	grip.Material = Enum.Material.Wood
-	grip.Color = HILT_COLOR
-	grip.CFrame = baseCFrame * CFrame.Angles(0, 0, math.rad(90))
-	grip.Parent = model
-
-	local wrap = Instance.new("Part")
-	wrap.Name = "Wrap"
-	wrap.Shape = Enum.PartType.Cylinder
-	wrap.Size = Vector3.new(0.22, 0.17, 0.24)
-	wrap.Material = Enum.Material.Fabric
-	wrap.Color = LEATHER_COLOR
-	wrap.CFrame = baseCFrame * CFrame.Angles(0, 0, math.rad(90))
-	wrap.Parent = model
-
-	local SEG_LEN = 0.55
-	local SEG_ANGLE = math.rad(18)
-	local SEG_COUNT = 3
-	local THICK = 0.1
-
-	-- monta um braço do arco: uma cadeia de segmentos que vai encurvando,
-	-- devolve as CFrames do meio de cada segmento (pra criar as Parts) e a
-	-- CFrame final (a ponta, onde a corda amarra)
-	local function buildLimb(startCFrame: CFrame, bendSign: number): ({ CFrame }, CFrame)
-		local segments: { CFrame } = {}
-		local cf = startCFrame
-		for _ = 1, SEG_COUNT do
-			cf = cf * CFrame.Angles(0, 0, SEG_ANGLE * bendSign)
-			table.insert(segments, cf * CFrame.new(0, SEG_LEN / 2, 0))
-			cf = cf * CFrame.new(0, SEG_LEN, 0)
-		end
-		return segments, cf
-	end
-
-	local upperSegments, upperTip = buildLimb(baseCFrame * CFrame.new(0, 0.25, 0), 1)
-	local lowerSegments, lowerTip = buildLimb(baseCFrame * CFrame.new(0, -0.25, 0), -1)
-
-	local limbIndex = 0
-	for _, segCFrame in upperSegments do
-		limbIndex += 1
+	local function addPart(name: string, size: Vector3, material: Enum.Material, color: Color3, cf: CFrame): Part
 		local part = Instance.new("Part")
-		part.Name = "Limb" .. limbIndex
-		part.Size = Vector3.new(THICK, SEG_LEN, THICK * 1.6)
-		part.Material = Enum.Material.Wood
-		part.Color = HILT_COLOR
-		part.CFrame = segCFrame
+		part.Name = name
+		part.Size = size
+		part.Material = material
+		part.Color = color
+		part.CFrame = cf
 		part.Parent = model
-	end
-	for _, segCFrame in lowerSegments do
-		limbIndex += 1
-		local part = Instance.new("Part")
-		part.Name = "Limb" .. limbIndex
-		part.Size = Vector3.new(THICK, SEG_LEN, THICK * 1.6)
-		part.Material = Enum.Material.Wood
-		part.Color = HILT_COLOR
-		part.CFrame = segCFrame
-		part.Parent = model
+		return part
 	end
 
-	-- nocks: capinhas nas pontas dos braços, onde a corda amarra
-	local nockTop = Instance.new("Part")
-	nockTop.Name = "NockTop"
+	local function between(name: string, a: Vector3, b: Vector3, thickness: number, material: Enum.Material, color: Color3): Part
+		local length = (b - a).Magnitude
+		return addPart(name, Vector3.new(thickness, length, thickness * 1.55), material, color,
+			CFrame.lookAt((a + b) * 0.5, b) * CFrame.Angles(math.pi / 2, 0, 0))
+	end
+
+	local grip = addPart("Grip", Vector3.new(0.64, 0.24, 0.24), Enum.Material.Wood, Color3.fromRGB(68, 42, 24),
+		baseCFrame * CFrame.Angles(0, 0, math.rad(90)))
+	addPart("LeatherWrap", Vector3.new(0.5, 0.29, 0.29), Enum.Material.Fabric, LEATHER_COLOR,
+		baseCFrame * CFrame.Angles(0, 0, math.rad(90)))
+	addPart("ArrowRest", Vector3.new(0.12, 0.16, 0.42), Enum.Material.Metal, POMMEL_COLOR,
+		baseCFrame * CFrame.new(0.16, 0.08, -0.08))
+
+	local function localPoint(sign: number, index: number): Vector3
+		local y = sign * (0.32 + index * 0.52)
+		local x = -0.035 * index * index
+		return (baseCFrame * CFrame.new(x, y, 0)).Position
+	end
+
+	local topStart = (baseCFrame * CFrame.new(0, 0.32, 0)).Position
+	local bottomStart = (baseCFrame * CFrame.new(0, -0.32, 0)).Position
+	local previousTop = topStart
+	local previousBottom = bottomStart
+	for index = 1, 5 do
+		local nextTop = localPoint(1, index)
+		between("LimbUpper" .. index, previousTop, nextTop, 0.13 - index * 0.009, Enum.Material.Wood, Color3.fromRGB(88, 52, 27))
+		previousTop = nextTop
+		local nextBottom = localPoint(-1, index)
+		between("LimbLower" .. index, previousBottom, nextBottom, 0.13 - index * 0.009, Enum.Material.Wood, Color3.fromRGB(88, 52, 27))
+		previousBottom = nextBottom
+	end
+
+	local nockTop = addPart("NockTop", Vector3.new(0.15, 0.15, 0.15), Enum.Material.Metal, POMMEL_COLOR, CFrame.new(previousTop))
 	nockTop.Shape = Enum.PartType.Ball
-	nockTop.Size = Vector3.new(0.13, 0.13, 0.13)
-	nockTop.Material = Enum.Material.Metal
-	nockTop.Color = POMMEL_COLOR
-	nockTop.CFrame = upperTip
-	nockTop.Parent = model
-
-	local nockBottom = Instance.new("Part")
-	nockBottom.Name = "NockBottom"
+	local nockBottom = addPart("NockBottom", Vector3.new(0.15, 0.15, 0.15), Enum.Material.Metal, POMMEL_COLOR, CFrame.new(previousBottom))
 	nockBottom.Shape = Enum.PartType.Ball
-	nockBottom.Size = Vector3.new(0.13, 0.13, 0.13)
-	nockBottom.Material = Enum.Material.Metal
-	nockBottom.Color = POMMEL_COLOR
-	nockBottom.CFrame = lowerTip
-	nockBottom.Parent = model
 
-	-- corda: reta, ligando as duas pontas dos braços
-	local topPos, bottomPos = upperTip.Position, lowerTip.Position
-	local mid = (topPos + bottomPos) / 2
-	local span = (topPos - bottomPos).Magnitude
-	local bowString = Instance.new("Part")
-	bowString.Name = "String"
-	bowString.Size = Vector3.new(0.03, span, 0.03)
-	bowString.Material = Enum.Material.Neon
-	bowString.Color = Color3.fromRGB(230, 230, 230)
-	bowString.CFrame = CFrame.new(mid, topPos) * CFrame.Angles(math.rad(90), 0, 0)
-	bowString.Parent = model
+	between("ReinforcementUpper", topStart, localPoint(1, 1), 0.18, Enum.Material.Fabric, LEATHER_COLOR)
+	between("ReinforcementLower", bottomStart, localPoint(-1, 1), 0.18, Enum.Material.Fabric, LEATHER_COLOR)
 
-	finishWeapon(model, rightHand, grip)
+	local restCenter = (baseCFrame * CFrame.new(0.18, 0, -0.08)).Position
+	local stringUpper = between("StringUpper", previousTop, restCenter, 0.035, Enum.Material.Neon, Color3.fromRGB(235, 235, 220))
+	stringUpper:SetAttribute("DynamicPart", true)
+	local stringLower = between("StringLower", restCenter, previousBottom, 0.035, Enum.Material.Neon, Color3.fromRGB(235, 235, 220))
+	stringLower:SetAttribute("DynamicPart", true)
+
+	for _, piece in model:GetChildren() do
+		if piece:IsA("BasePart") then
+			piece.Transparency = 1
+			if piece:GetAttribute("DynamicPart") then
+				piece.Anchored = true
+				piece.CanCollide = false
+				piece.CanQuery = false
+				piece.CanTouch = false
+				piece.CastShadow = false
+			else
+				piece.Anchored = false
+				piece.CanCollide = false
+				piece.CanQuery = false
+				piece.CastShadow = false
+				piece.Massless = true
+				if piece ~= grip then
+					weldTo(grip, piece)
+				end
+			end
+		end
+	end
+	local gripMotor = Instance.new("Motor6D")
+	gripMotor.Name = "BowGripMotor"
+	gripMotor.Part0 = leftHand
+	gripMotor.Part1 = grip
+	gripMotor.C0 = leftHand.CFrame:ToObjectSpace(grip.CFrame)
+	gripMotor.C1 = CFrame.identity
+	gripMotor.Parent = grip
+	model.PrimaryPart = grip
+	model.Parent = leftHand.Parent
 	return model
 end
 
@@ -539,8 +543,8 @@ function CombatStance.setWeaponActive(character: Model?, weaponId: string, activ
 	if not gear then
 		return
 	end
-	local rightHand = findHands(character, hum)
-	if not rightHand then
+	local rightHand, leftHand = findHands(character, hum)
+	if not rightHand or not leftHand then
 		return
 	end
 
@@ -557,7 +561,7 @@ function CombatStance.setWeaponActive(character: Model?, weaponId: string, activ
 		end
 		local model = gear.weapons[weaponId]
 		if not model then
-			model = def.build(rightHand)
+			model = def.build(weaponId == "bow" and leftHand or rightHand)
 			gear.weapons[weaponId] = model
 		end
 		setPartsVisible(model, true)

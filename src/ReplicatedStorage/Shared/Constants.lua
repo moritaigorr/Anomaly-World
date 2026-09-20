@@ -113,4 +113,13 @@ Constants.Sprint = {
 	MinToStart = 55,     -- folego pra (re)comecar: forca uma pausa que da pra ler
 }
 
+Constants.Bow = {
+	Range = 220,
+	Speed = 190,
+	Damage = 24,
+	DrawTime = 0.65,
+	Cooldown = 0.78,
+	Lifetime = 4,
+}
+
 return Constants
