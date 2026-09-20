@@ -1,24 +1,31 @@
-# Anomaly World — Marco 0 (protótipo cinza)
+# Anomaly World
 
-O objetivo deste marco é uma coisa só: **provar que o combate é divertido.**
-Um personagem, uma Core (Thunder), 3 slimes que aparecem sozinhos por código, e os
-4 verbos do combate. Sem arte, sem save, sem menu — de propósito.
+Um vilarejo nórdico gerado por código, combate corpo a corpo servidor-autoritativo,
+um boss de 4 fases, montarias e um jogador com Anomaly Cores trocáveis (Thunder,
+Frost). O README anterior descrevia o "Marco 0" (protótipo cinza); o jogo já foi
+muito além disso — este documento reflete o estado atual.
 
 ## Controles
+
 | Input | Ação |
 |---|---|
 | **M1** (clique) | Golpe leve (combo de 4, o 4º dá knockback) |
 | **F** | Ataque pesado — lento, forte, quebra a guarda do inimigo |
-| **Botão direito** (segurar) | Bloquear. Soltar+apertar no tempo do golpe = **PARRY** |
-| **G** | Ultimate (quando a barra encher) |
+| **G** | Ultimate (quando a barra encher, carrega batendo) |
 | **R** | Lock-on no inimigo |
 | **Q** | Esquiva com i-frames (gasta stamina) |
+| **Shift** (segurar) | Correr (gasta a mesma stamina da esquiva) |
 | **T** | Trocar de Anomaly Core (Thunder ⇄ Frost) |
 | **B** | Abrir o Anomaly Database |
+| **H** | Montar/desmontar |
 | **Z** | Thunder Dash — impulso + dano em linha |
 | **X** | Lightning Strike — nuke no alvo à frente (sempre crita) |
 | **C** | Storm — dano em área ao redor |
 | **V** | Thunder Form — buff de dano por 8s |
+
+> **Bloqueio e parry foram removidos.** O botão direito do mouse não faz mais
+> nada — fica livre para a câmera padrão do Roblox. A guarda que existe hoje é
+> só do **inimigo** (quebrada por F ou pelo ultimate), não do jogador.
 
 ## Como rodar (primeira vez)
 
@@ -30,30 +37,45 @@ Um personagem, uma Core (Thunder), 3 slimes que aparecem sozinhos por código, e
    ```bash
    rojo serve
    ```
-3. **No Roblox Studio**: crie um lugar novo (ou abra um Baseplate), abra o plugin
-   **Rojo** → **Connect**. O código vai sincronizar para dentro do jogo.
-4. Aperte **Play**. Os 3 slimes aparecem sozinhos e o HUD surge no canto. Após ~5s,
-   **THE EXPERIMENT** (o boss) aparece ao norte (Z≈90) com aviso na tela.
+3. **No Roblox Studio**: abra o lugar do projeto, abra o plugin **Rojo** →
+   **Connect**. O código vai sincronizar para dentro do jogo.
+4. Aperte **Play**. O vilarejo, as criaturas e o boss já existem no lugar (o
+   grosso da geometria foi "assada" no Studio — ver seção **Mundo** abaixo).
 
-> Não precisa montar nada no Studio: a **área** (vilarejo nórdico), as
-> criaturas e o boss são criados por código ao dar Play. Tudo o que o WorldService
-> constrói fica em `workspace.AnomalyWorld` — é só apagar essa pasta (ou desligar o
-> serviço no `Main.server.lua`) quando vocês tiverem um mapa feito à mão no Studio.
->
-> Como isso roda em tempo de execução, **o arquivo do seu lugar não é alterado**:
-> ao dar Stop, tudo some.
+### Modelos que NÃO estão no Rojo/git (risco conhecido)
+
+As malhas de criaturas, boss, mobília, construções, banca do mercado e a
+montaria vivem hoje **só dentro do arquivo `.rbxl` do Studio**, em pastas
+soltas dentro de `ServerStorage` (`_Criaturas`, `_Mobilia`, `_Construcoes`,
+`_Mercado`, `_Montarias`). Rojo **não sincroniza `ServerStorage`** neste
+projeto (não está mapeado em `default.project.json`) justamente para não
+sobrescrever essas pastas com sync automático.
+
+**Isso significa que esses modelos não estão versionados.** Se o arquivo
+`.rbxl` local se perder ou corromper, essas malhas somem e o `WorldService`
+cai nos fallbacks primitivos (esferas/formas antigas) para criaturas e boss.
+
+Enquanto não exportamos isso para o git, faça backup manual do `.rbxl`
+regularmente (cópia fora do OneDrive/nuvem síncrona, ou um `.zip` versionado
+à parte). O plano para versionar de verdade está anotado como pendência do
+projeto (ver `AGENTS`/memória do projeto) — resumo: exportar cada pasta via
+**Explorer → botão direito → Save to File (.rbxm)** no Studio, guardar em uma
+pasta do repositório fora do `$path` do Rojo (para não conflitar com o mapa
+atual), e só depois decidir como fazer o Rojo consumir isso automaticamente.
 
 ### Para o save funcionar
-O progresso (créditos, mastery, drops, abates de boss) usa DataStore. No Studio,
-ative **Game Settings → Security → Enable Studio Access to API Services**. Sem isso o
-jogo roda normal, só não salva (avisa no output). Em produção, considere trocar o
-`DataService` por **ProfileService** — a interface já foi feita pra essa troca.
+O progresso (créditos, mastery, drops, abates de boss, Anomaly Database,
+Core equipada) usa DataStore direto. No Studio, ative **Game Settings →
+Security → Enable Studio Access to API Services**. Sem isso o jogo roda
+normal, só não salva (avisa no output). Em produção, considere trocar o
+`DataService` por **ProfileService** — a interface já foi feita pra essa
+troca, mas ela ainda não aconteceu.
 
-### O boss THE EXPERIMENT
-4 fases que mudam comportamento conforme o HP: 100% forma normal → 70% mutação
-(mais rápido/forte) → 40% arena instável (ataque de área telegrafado) → 10% TRUE FORM.
-Drops com as chances da bíblia (Claw 15% … Corrupted Core 0,05%). Ele é marcado com
-a tag `Enemy`, então seus golpes e poderes já o acertam sem código extra.
+### O boss O Draugr-Rei
+4 fases que mudam comportamento conforme o HP: Desperto → Fúria Antiga →
+Chamado das Runas (slam de área telegrafado) → Rei Imortal. Drops com
+chances reais (Garra do Draugr, Lâmina Rúnica, Coroa do Rei, Coroa
+Amaldiçoada). Arena com raio limitado e respawn de 20s.
 
 ## Arquitetura (resumo)
 
@@ -62,20 +84,27 @@ src/
 ├─ ReplicatedStorage/Shared/   -- código puro compartilhado
 │  ├─ Constants.lua            -- TODO o tuning (mexa aqui pra balancear)
 │  ├─ CoreData.lua             -- dados das Anomaly Cores
-│  ├─ BossData.lua             -- fases + drops dos bosses
+│  ├─ BossData.lua             -- fases + drops do boss
+│  ├─ CreatureData.lua         -- criaturas comuns data-driven
+│  ├─ MountData.lua            -- montarias
+│  ├─ ZoneData.lua             -- zonas de caça / marcos do mundo
 │  ├─ CombatFormula.lua        -- fórmula de dano
+│  ├─ CombatStance.lua         -- poses de arma no personagem (visual)
+│  ├─ Bow*.lua                 -- mira/pose/projétil do arco (ver status abaixo)
 │  └─ Net.lua                  -- cria/localiza os RemoteEvents
 ├─ ServerScriptService/        -- AUTORIDADE (valida e aplica tudo)
 │  ├─ Main.server.lua          -- bootstrap do servidor
 │  └─ Services/
 │     ├─ PlayerState.lua       -- estado em memória por jogador
 │     ├─ CombatUtil.lua        -- mira + aplicação de dano
-│     ├─ CombatService.lua     -- golpe M1
-│     ├─ MovementService.lua   -- esquiva + stamina
+│     ├─ CombatService.lua     -- golpe M1 / F / ultimate
+│     ├─ MovementService.lua   -- esquiva + corrida + stamina
 │     ├─ CoreService.lua       -- poderes Z/X/C/V
 │     ├─ WorldService.lua      -- constrói a área + iluminação/atmosfera
+│     ├─ World/*.lua           -- muralha, cidade, porto, floresta, terreno...
 │     ├─ EnemyService.lua      -- spawn + IA das criaturas (data-driven)
-│     ├─ BossService.lua       -- THE EXPERIMENT (fases + drops)
+│     ├─ BossService.lua       -- O Draugr-Rei (fases + drops)
+│     ├─ MountService.lua      -- montar/desmontar, galope
 │     ├─ DataService.lua       -- persistência (save/load)
 │     └─ StateService.lua      -- envia estado pro HUD
 └─ StarterPlayerScripts/       -- CLIENTE (input + feedback + HUD)
@@ -83,7 +112,11 @@ src/
    └─ Controllers/
       ├─ InputController.lua    -- captura input, pede ao servidor
       ├─ CombatController.lua   -- game feel: dano flutuante, shake, VFX
-      └─ HudController.lua      -- HP/stamina/cooldowns
+      ├─ CameraController.lua   -- terceira pessoa + lock-on
+      ├─ HudController.lua      -- HP/stamina/cooldowns/database
+      ├─ MountController.lua    -- animação da montaria
+      ├─ AuraController.lua     -- efeito visual por Core equipada
+      └─ InventoryController.lua-- UI de troca de arma (hoje só visual)
 ```
 
 ## Princípio inquebrável
@@ -92,14 +125,32 @@ src/
 só dispara `RemoteEvent`s de intenção e mostra feedback; o servidor valida cooldown,
 alcance e mira e aplica o resultado. É isso que segura o jogo contra cheat.
 
+## Status por sistema
+
+| Sistema | Estado |
+|---|---|
+| Combate corpo a corpo (M1/F/Ultimate) | ✅ maduro, autoritativo no servidor |
+| Anomaly Cores (Thunder/Frost + Z/X/C/V) | ✅ maduro, data-driven |
+| Mundo (cidade, porto, floresta, terreno) | ✅ construído por código, bem trabalhado |
+| Boss O Draugr-Rei | ✅ maduro, 4 fases |
+| Criaturas comuns | ✅ funcional, IA simples |
+| Montarias | ✅ maduro |
+| Save (DataStore) | ⚠️ funcional, mas não salva a arma equipada nem sobrevive à falta de ProfileService |
+| Arco / gear de armas | ⚠️ módulos prontos, **não conectados ao input do jogador** (arma trocada no inventário é só visual, dano continua vindo das Cores) |
+| Barra de postura no HUD | 🐛 existe na UI, mas o servidor não envia esse dado — nunca atualiza |
+| Drops de boss | ⚠️ coletados e salvos, sem uso (sem loja/crafting) |
+| Backup dos modelos 3D | 🐛 só existem no `.rbxl`, fora do git (ver seção acima) |
+
+## Roadmap
+
+Ver `ROADMAP.md` para os marcos do projeto e o que falta pra fechar o atual.
+
 ## Onde mexer primeiro
 
 - **Sensação ruim?** → `Constants.lua` (dano, alcance, cooldowns, velocidade dos slimes)
   e `CombatController.lua` (shake, hit-stop, números).
 - **Nova Core?** → só adicione uma tabela em `CoreData.lua`. A lógica genérica de
-  Z/X/C/V já lê de lá (o passo seguinte é generalizar efeitos por dados).
-
-## A pergunta do Marco 0
-
-Depois de brincar 5 minutos: **isso é divertido?** Se sim, seguimos pro Marco 1
-(1 área bonita, save com ProfileService, boss). Se não, o conserto é aqui.
+  Z/X/C/V já lê de lá.
+- **Terminar o arco?** → plugar `BowAttack.shoot` no `InputController`, criar
+  validação de dano de projétil no servidor (`CombatUtil`), e decidir se armas
+  passam a ter stats próprios ou continuam cosméticas.
