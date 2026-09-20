@@ -1,0 +1,14 @@
+# selene.toml — análise estática do Luau deste projeto.
+# std roblox: o gerador de definicoes do selene entende a API da Roblox.
+# O roblox.yml que isto exige NAO esta versionado (26 mil linhas geradas).
+# Para rodar a analise numa maquina nova:
+#     aftman install && selene generate-roblox-std && selene src
+std = "roblox"
+
+[lints]
+# o projeto é --!strict e usa muito `_` e shadowing intencional em loops curtos
+shadowing = "warn"
+unused_variable = "warn"
+undefined_variable = "deny"
+global_usage = "deny"
+multiple_statements = "allow"

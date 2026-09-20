@@ -10,6 +10,7 @@ local CombatFormula = require(ReplicatedStorage.Shared.CombatFormula)
 local Net = require(ReplicatedStorage.Shared.Net)
 local Constants = require(ReplicatedStorage.Shared.Constants)
 local PlayerState = require(script.Parent.PlayerState)
+local MountService = require(script.Parent.MountService)
 
 local CombatFeedback = Net.get("CombatFeedback")
 
@@ -106,8 +107,9 @@ function CombatUtil.damageEnemy(attacker: Player, enemy: Model, params, knockbac
 end
 
 -- tira guarda (posture) de um inimigo; se zerar, ele fica atordoado e vulnerável.
--- Usado pelo parry e pelo ataque pesado.
-function CombatUtil.damageEnemyPosture(enemy: Model, amount: number, notify: Player?)
+-- Usado pelo ataque pesado (F) e pelo ultimate. A guarda do JOGADOR não existe
+-- mais — este sistema é só dos inimigos, e vive em atributos do Model.
+function CombatUtil.damageEnemyPosture(enemy: Model, amount: number, _notify: Player?)
 	local hum = enemy:FindFirstChildOfClass("Humanoid")
 	local hrp = rootOf(enemy)
 	if not hum or not hrp or hum.Health <= 0 then
@@ -131,9 +133,11 @@ function CombatUtil.damageEnemyPosture(enemy: Model, amount: number, notify: Pla
 	end
 end
 
--- aplica dano de um inimigo NO jogador, respeitando esquiva/parry/bloqueio.
--- attacker é o Model do inimigo (pra atordoar num parry).
-function CombatUtil.damagePlayer(player: Player, amount: number, attacker: Model?)
+-- aplica dano de um inimigo NO jogador, respeitando a esquiva.
+-- O bloqueio e o parry foram removidos: fora dos i-frames do dash, o golpe entra.
+-- `_attacker` ficou sem uso quando o parry saiu; a assinatura continua porque
+-- os chamadores passam o inimigo e ele volta a servir no dia que houver atordoamento.
+function CombatUtil.damagePlayer(player: Player, amount: number, _attacker: Model?)
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -148,42 +152,9 @@ function CombatUtil.damagePlayer(player: Player, amount: number, attacker: Model
 		return
 	end
 
-	local now = os.clock()
-
-	if s.blocking and now >= s.stunUntil then
-		if now - s.blockStart <= Constants.Block.ParryWindow then
-			-- PARRY: dano zero + atordoa o atacante + tira a guarda dele + carrega ult
-			if attacker then
-				attacker:SetAttribute("StunUntil", now + Constants.Block.ParryStun)
-				CombatUtil.damageEnemyPosture(attacker, Constants.Block.ParryPostureDamage, player)
-			end
-			s.ultCharge = math.min(Constants.Ultimate.Max, s.ultCharge + Constants.Ultimate.GainPerParry)
-			CombatFeedback:FireClient(player, { kind = "parry", position = hrp and hrp.Position })
-			return
-		else
-			-- BLOQUEIO segurado: gasta guarda (posture)
-			s.posture -= Constants.Block.BlockCost
-			s.postureHitAt = now
-			if s.posture <= 0 then
-				-- GUARDA QUEBRADA: fica atordoado e o golpe entra inteiro
-				s.posture = Constants.Posture.Max
-				s.blocking = false
-				s.stunUntil = now + Constants.Posture.BreakStun
-				hum:TakeDamage(amount)
-				CombatFeedback:FireClient(player, {
-					kind = "guardBreak",
-					position = hrp and hrp.Position,
-				})
-				return
-			end
-			local chip = math.floor(amount * Constants.Block.BlockChip + 0.5)
-			if chip > 0 then
-				hum:TakeDamage(chip)
-			end
-			CombatFeedback:FireClient(player, { kind = "blocked", position = hrp and hrp.Position })
-			return
-		end
-	end
+	-- Levar dano DERRUBA da montaria. Vem depois dos i-frames de propósito: um
+	-- golpe esquivado não derruba ninguém.
+	MountService.breakOnDamage(player)
 
 	hum:TakeDamage(amount)
 end

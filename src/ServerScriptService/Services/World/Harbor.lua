@@ -9,7 +9,13 @@ local C = Build.C
 
 local Harbor = {}
 
-local WATER_Y = -1 -- superfície da água (ver Terra.lua)
+-- SUPERFÍCIE DA ÁGUA, MEDIDA e não deduzida.
+-- Terra preenche a água até GROUND_TOP - 1, e a isosuperfície do voxel põe o
+-- espelho em y = -1,98 (raycast, com IgnoreWater = false). O valor -1 que
+-- estava aqui deixava o cais, os píeres, o guindaste e os drakkares um stud
+-- acima da lâmina — pouco, mas é o tipo de folga que faz o barco parecer
+-- pousado sobre a água em vez de dentro dela.
+local WATER_Y = -2
 local SHORE_X = 250 -- onde a terra ainda é firme
 
 -- ------------------------------------------------------------- drakkar

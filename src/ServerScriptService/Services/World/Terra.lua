@@ -4,12 +4,27 @@
 -- com água e cordilheira ao redor. Referência: foto de Siglufjörður/Islândia —
 -- cidade encaixada entre montanha e mar, luz baixa e fria.
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ZoneData = require(ReplicatedStorage.Shared.ZoneData)
+
+local Assets = require(script.Parent.Assets)
 local Terrain = workspace.Terrain
 
 local Terra = {}
 
--- topo do terreno fica em y = 0 (todo o resto do mundo assume isso)
-local GROUND_TOP = 0
+-- ALTURA DO CHÃO.
+--
+-- O resto do mundo assume que o chão está em y = 0 e constrói pra cima a partir
+-- daí. Só que o voxel de terreno tem 4 studs e a isosuperfície NÃO cai no topo
+-- do preenchimento: medido em jogo, preencher até 0 renderiza a superfície em
+-- y = 2. Resultado: todo prop colocado em y = 0 nascia DOIS STUDS ENTERRADO —
+-- barril de 3 de altura virava uma tampa deitada na neve.
+--
+-- A quantização não permite acertar 0 exatamente (topo -1 -> superfície 1,0;
+-- topo -2 -> superfície -1,0), mas -1 corta o enterramento pela metade em todo
+-- o mapa de uma vez, e é uma linha em vez de 96 pontos de chamada.
+-- Build.GROUND_TOP acompanha este valor: os dois preenchem o mesmo nível.
+local GROUND_TOP = -1
 local PLAIN = 1500 -- extensão da planície (era 900: dava pra ver a borda cortada)
 local SEA_FROM = 300 -- a partir deste X começa o fiorde (leste)
 
@@ -58,21 +73,89 @@ function Terra.build()
 	-- Antes havia um único anel a 370 studs e dava pra ver a planície acabar num
 	-- corte reto atrás dele. Agora uma faixa próxima (relevo) e outra distante e
 	-- bem alta (parede de horizonte) escondem a borda do mundo.
-	local function ridge(count: number, distMin: number, distSpan: number, rMin: number, rSpan: number)
+	-- CORDILHEIRA DE MESH.
+	--
+	-- DUAS TENTATIVAS ERRADAS ANTES DESTA, e vale registrar pra ninguém repetir:
+	-- primeiro cada montanha era UMA Terrain:FillBall — uma esfera enterrada pela
+	-- metade, ou seja, um domo liso. Depois tentei "consertar" empilhando de 5 a 8
+	-- bolas ao longo de uma crista, o que só produziu domos maiores encostados uns
+	-- nos outros. Bola continua sendo bola: FillBall não tem como gerar aresta,
+	-- face de rocha nem vertente.
+	--
+	-- Agora é MALHA: um mesh de penhasco do catálogo, esticado em três eixos
+	-- (MeshPart.Size aceita escala não uniforme, ScaleTo não) pra cada monte ter
+	-- proporção própria, com um pico menor por cima em branco fazendo a neve de
+	-- cume. Duas peças por montanha contra ~7 bolas de terreno — e finalmente
+	-- parece rocha.
+	local ROCHA = Color3.fromRGB(88, 92, 99)
+	local ROCHA_LONGE = Color3.fromRGB(104, 112, 124) -- mais claro: perspectiva aérea
+	local NEVE_CUME = Color3.fromRGB(226, 232, 238)
+
+	-- ONDE NÃO PODE NASCER MONTANHA.
+	-- Quando a cordilheira era terreno isto já era discutível; agora que ela é
+	-- MALHA SÓLIDA virou bloqueio de verdade. O anel próximo fica a 390-470 do
+	-- centro e o círculo do boss está a 424 — ou seja, exatamente em cima. O
+	-- boss nasceu dentro da rocha. As zonas de caça correm o mesmo risco.
+	local BOSS_POS = Vector3.new(-300, 0, 300) -- espelha Wilds.BOSS_POS
+	local function arenaOcupada(x: number, z: number): boolean
+		local p = Vector3.new(x, 0, z)
+		if (p - BOSS_POS).Magnitude < 150 then
+			return true
+		end
+		for _, zona in ZoneData.zones do
+			if (p - Vector3.new(zona.center.X, 0, zona.center.Z)).Magnitude < zona.radius + 90 then
+				return true
+			end
+		end
+		return false
+	end
+
+	local function serra(count: number, distMin: number, distSpan: number, largMin: number, largSpan: number, altF: number, longe: boolean)
 		for i = 1, count do
-			local ang = (i / count) * math.pi * 2 + math.random() * 0.15
+			local ang = (i / count) * math.pi * 2 + (math.random() - 0.5) * 0.22
 			if math.cos(ang) < 0.45 then -- pula o setor do mar
 				local dist = distMin + math.random() * distSpan
 				local x, z = math.cos(ang) * dist, math.sin(ang) * dist
-				local r = rMin + math.random() * rSpan
-				Terrain:FillBall(Vector3.new(x, GROUND_TOP - r * 0.40, z), r, Enum.Material.Rock)
-				Terrain:FillBall(Vector3.new(x, GROUND_TOP + r * 0.32, z), r * 0.48, Enum.Material.Snow)
+				if arenaOcupada(x, z) then
+					continue
+				end
+				local larg = largMin + math.random() * largSpan
+				local alt = larg * altF * (0.8 + math.random() * 0.45)
+				local prof = larg * (0.7 + math.random() * 0.5)
+				local giro = math.random(0, 359)
+				Assets.spawnRelief(
+					Vector3.new(x, GROUND_TOP, z),
+					larg,
+					alt,
+					prof,
+					giro,
+					longe and ROCHA_LONGE or ROCHA
+				)
+				-- NEVE DO CUME: MANCHAS, NÃO CALOTA.
+				-- A primeira versão punha UMA malha branca menor, centrada no topo.
+				-- Como só se enxerga a parte de cima dela, ela volta a ler como
+				-- DOMO — o mesmo defeito que a malha veio resolver. Agora são duas
+				-- ou três manchas menores, deslocadas do eixo, em alturas e giros
+				-- diferentes: o branco acompanha a rocha em vez de cobri-la com
+				-- uma tampa lisa.
+				for _ = 1, 2 + math.random(0, 1) do
+					local desl = (math.random() - 0.5) * larg * 0.5
+					local desl2 = (math.random() - 0.5) * prof * 0.5
+					Assets.spawnRelief(
+						Vector3.new(x + desl, GROUND_TOP + alt * (0.40 + math.random() * 0.22), z + desl2),
+						larg * (0.24 + math.random() * 0.14),
+						alt * (0.20 + math.random() * 0.12),
+						prof * (0.24 + math.random() * 0.14),
+						math.random(0, 359),
+						NEVE_CUME
+					)
+				end
 			end
 		end
 	end
 
-	ridge(20, 380, 70, 55, 55) -- serra próxima: dá profundidade
-	ridge(26, 600, 90, 110, 90) -- parede de horizonte: esconde a borda do mundo
+	serra(16, 390, 80, 200, 150, 0.62, false) -- serra próxima: dá profundidade
+	serra(20, 620, 110, 330, 240, 0.58, true) -- parede de horizonte
 
 	-- RELEVO DA PLANÍCIE.
 	-- Uma planície perfeitamente plana é o que faz a cidade ler como maquete
@@ -87,6 +170,9 @@ function Terra.build()
 		if math.sqrt(x * x + z * z) < TOWN_CLEAR then
 			return true
 		end
+		if arenaOcupada(x, z) then
+			return true -- nem afloramento dentro da arena do boss ou das zonas
+		end
 		if math.abs(x) < ROAD_HALF and z < 0 then
 			return true -- não fecha a saída do portão
 		end
@@ -96,14 +182,22 @@ function Terra.build()
 		return false
 	end
 
-	-- afloramentos: rocha exposta com neve acumulada em cima
-	for _ = 1, 70 do
+	-- AFLORAMENTOS: pedra exposta na planície. Também eram bolas (uma de rocha
+	-- com outra de neve por cima); agora é a mesma malha de penhasco em tamanho
+	-- de pedra, girada ao acaso, que dá aresta e sombra de verdade.
+	for _ = 1, 55 do
 		local x = (math.random() - 0.5) * PLAIN * 0.86
 		local z = (math.random() - 0.5) * PLAIN * 0.86
 		if not blocked(x, z) then
-			local r = 9 + math.random() * 20
-			Terrain:FillBall(Vector3.new(x, GROUND_TOP - r * 0.55, z), r, Enum.Material.Rock)
-			Terrain:FillBall(Vector3.new(x, GROUND_TOP - r * 0.15, z), r * 0.62, Enum.Material.Snow)
+			local larg = 16 + math.random() * 26
+			Assets.spawnRelief(
+				Vector3.new(x, GROUND_TOP, z),
+				larg,
+				larg * (0.45 + math.random() * 0.4),
+				larg * (0.7 + math.random() * 0.5),
+				math.random(0, 359),
+				Color3.fromRGB(92, 96, 104)
+			)
 		end
 	end
 

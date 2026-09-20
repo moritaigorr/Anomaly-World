@@ -7,6 +7,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ZoneData = require(ReplicatedStorage.Shared.ZoneData)
 
+local Assets = require(script.Parent.Assets)
 local Build = require(script.Parent.Build)
 local Walls = require(script.Parent.Walls)
 local C = Build.C
@@ -15,31 +16,44 @@ local Wilds = {}
 
 Wilds.BOSS_POS = Vector3.new(-300, 0, 300) -- círculo ritual, longe da cidade
 
--- pinheiro estilizado (camadas cônicas aproximadas)
-local function pine(pos: Vector3, scale: number)
-	Build.post(pos, 8 * scale, 1.5 * scale, C.WOOD_DARK, Enum.Material.Wood)
-	for i = 0, 3 do
-		local r = (7.5 - i * 1.7) * scale
-		Build.part({
-			Shape = Enum.PartType.Cylinder,
-			Size = Vector3.new(3.4 * scale, r, r),
-			CFrame = CFrame.new(pos + Vector3.new(0, (7 + i * 2.8) * scale, 0))
-				* CFrame.Angles(0, 0, math.rad(90)),
-			Color = Color3.fromRGB(44, 60, 48),
-			Material = Enum.Material.Grass,
-			CastShadow = false,
-		})
+-- PINHEIRO.
+--
+-- PRIMITIVAS NÃO DERAM CONTA. Duas tentativas: quatro cilindros deitados (que
+-- viravam pilha de panquecas de aresta dura) e seis elipsoides afunilados (que
+-- melhoraram a silhueta mas continuavam lendo como formas empilhadas, porque é
+-- o que eram). O problema não era o ajuste do perfil — era a ferramenta.
+--
+-- Agora é um MESH de verdade, do catálogo, com textura e neve pintada nos
+-- galhos. Custa UMA peça por árvore em vez de sete, então além de ficar certo
+-- ficou mais barato. As primitivas continuam aqui como plano B: se o asset não
+-- carregar (conta sem acesso, rede fora), a floresta existe mesmo assim em vez
+-- de o mapa aparecer pelado.
+local FOLHA = Color3.fromRGB(62, 88, 66)
+local FOLHA_FRIA = Color3.fromRGB(54, 82, 78)
+
+local function pinePrimitivas(pos: Vector3, scale: number)
+	local H = 20 * scale
+	local R = 4.2 * scale
+	Build.post(pos, H * 0.42, 1.1 * scale, C.WOOD_DARK, Enum.Material.Wood)
+	local cor = Build.tint((math.random() < 0.3) and FOLHA_FRIA or FOLHA, 0.07)
+	local N = 6
+	for i = 0, N - 1 do
+		local t = i / (N - 1)
+		local f = 0.30 + t * 0.62
+		local r = math.max(R * (1 - t) ^ 0.8, 0.45)
+		Build.blob(CFrame.new(pos + Vector3.new(0, H * f, 0)), r * 2, 3.2 * scale, cor, Enum.Material.Grass)
 	end
-	-- neve na copa
-	Build.part({
-		Shape = Enum.PartType.Ball,
-		Size = Vector3.new(2.6, 1.4, 2.6) * scale,
-		CFrame = CFrame.new(pos + Vector3.new(0, 16.4 * scale, 0)),
-		Color = C.SNOW,
-		Material = Enum.Material.Snow,
-		CanCollide = false,
-		CastShadow = false,
-	})
+	if math.random() < 0.4 then
+		Build.blob(CFrame.new(pos + Vector3.new(0, H * 0.84, 0)), 2.8 * scale, 1.4 * scale, C.SNOW, Enum.Material.Snow)
+	end
+end
+
+local function pine(pos: Vector3, scale: number)
+	-- o molde mede 15,5 de altura; scale 0.8..1.6 dá de 12 a 25 studs
+	local m = Assets.spawn("PINE", pos, math.random(0, 359), scale, false)
+	if not m then
+		pinePrimitivas(pos, scale)
+	end
 end
 
 local function forest()
@@ -49,7 +63,8 @@ local function forest()
 		local x, z = math.cos(ang) * dist, math.sin(ang) * dist
 		-- não planta no mar (leste) nem em cima das zonas/boss
 		if x < 280 then
-			local p = Vector3.new(x, 0, z)
+			-- no chão medido, não em y=0 (a superfície do terreno não está em 0)
+			local p = Vector3.new(x, Build.groundY(x, z, 1), z)
 			local ok = (p - Wilds.BOSS_POS).Magnitude > 70
 			for _, zone in ZoneData.zones do
 				if (p - zone.center).Magnitude < zone.radius + 8 then
@@ -82,7 +97,7 @@ local function zoneMarkers()
 			CanCollide = false,
 			CastShadow = false,
 		})
-		Build.light(r, C.RUNE, 2.4, 40)
+		Build.light(r, C.RUNE, 1.0, 22)
 		-- pedras menores em volta
 		for i = 1, 5 do
 			local a = (i / 5) * math.pi * 2
@@ -164,13 +179,19 @@ local function barrow()
 		return
 	end
 	local c = zone.center
-	Build.part({
-		Shape = Enum.PartType.Ball,
-		Size = Vector3.new(56, 26, 56),
-		CFrame = CFrame.new(c + Vector3.new(0, 2, 0)),
-		Color = C.SNOW,
-		Material = Enum.Material.Snow,
-	})
+	-- O MONTÍCULO ERA UMA BOLA. Part com Shape = Ball ignora escala não uniforme
+	-- e desenha ESFERA: pedir 56 x 26 x 56 dava um domo branco de 56 studs
+	-- plantado na planície, visível de longe como uma bola de golfe gigante.
+	-- Agora é a mesma malha de penhasco dos maciços, achatada e branca — tem
+	-- aresta, face e sombra, que é o que faz ler como terra amontoada.
+	if not Assets.spawnRelief(c, 58, 22, 54, math.random(0, 359), C.SNOW) then
+		Build.part({
+			Size = Vector3.new(50, 20, 50),
+			CFrame = CFrame.new(c + Vector3.new(0, 6, 0)),
+			Color = C.SNOW,
+			Material = Enum.Material.Snow,
+		})
+	end
 	for _, sx in { -1, 1 } do
 		Build.part({
 			Size = Vector3.new(3.5, 12, 3.5),
@@ -193,7 +214,7 @@ local function barrow()
 		CanCollide = false,
 		CastShadow = false,
 	})
-	Build.light(r, C.RUNE, 2, 30)
+	Build.light(r, C.RUNE, 0.9, 18)
 	-- boca escura da entrada
 	Build.part({
 		Size = Vector3.new(9, 11, 2),
@@ -233,7 +254,7 @@ local function bossCircle()
 			CastShadow = false,
 		})
 		if i % 3 == 0 then
-			Build.light(r, C.RUNE, 2, 45)
+			Build.light(r, C.RUNE, 0.9, 24)
 		end
 	end
 	-- estrada do portão até o círculo

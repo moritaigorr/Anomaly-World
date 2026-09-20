@@ -32,6 +32,11 @@ local function makeHealthBar(parent: BasePart, hum: Humanoid, nome: string, widt
 	bb.Size = UDim2.fromScale(width, width * 0.28)
 	bb.StudsOffset = Vector3.new(0, parent.Size.Y * 0.9, 0)
 	bb.AlwaysOnTop = true
+	-- MaxDistance NÃO É OPCIONAL aqui. O padrão é 0 = infinito: cada uma das 14
+	-- criaturas desenhava nome e barra de vida de qualquer ponto do mapa, por
+	-- cima da muralha (AlwaysOnTop), poluindo o horizonte inteiro. 80 studs é
+	-- mais que o alcance de agro (45), então você vê a barra de quem pode te ver.
+	bb.MaxDistance = 80
 	bb.Parent = parent
 
 	local label = Instance.new("TextLabel")
@@ -127,21 +132,62 @@ local function spawnCreature(zone)
 		table.insert(decor, { part = p, offset = offset })
 	end
 
-	local scale = def.size.X / 3 -- proporcional ao tamanho da criatura
-	addDecor(Vector3.one * 1.2 * scale, CFrame.new(0, 0, 0), def.coreColor, Enum.Material.Neon)
-	for _, sx in { -0.7 * scale, 0.7 * scale } do
-		addDecor(
-			Vector3.one * 0.7 * scale,
-			CFrame.new(sx, 0.3 * scale, -1.2 * scale),
-			Color3.new(1, 1, 1),
-			Enum.Material.SmoothPlastic
-		)
-		addDecor(
-			Vector3.one * 0.34 * scale,
-			CFrame.new(sx, 0.3 * scale, -1.45 * scale),
-			Color3.fromRGB(15, 20, 25),
-			Enum.Material.SmoothPlastic
-		)
+	-- ---------------- CORPO VISÍVEL ----------------
+	-- A criatura ERA uma esfera de vidro translúcida com um núcleo Neon e quatro
+	-- bolinhas de olho. Quatro bolas, nada mais — a mesma doença das montanhas.
+	--
+	-- Agora o visual vem de um MODELO em ServerStorage._Criaturas, indexado pelo
+	-- id da criatura (ANM-001 etc.). O corpo esférico continua existindo como
+	-- volume de colisão/mira e vira INVISÍVEL: assim nada em CombatUtil, agro ou
+	-- lock-on precisa saber que a aparência mudou.
+	--
+	-- ONDE ESSES MODELOS MORAM. Eles foram gerados como malha e vivem no arquivo
+	-- do place, não no git: mesh gerada não carrega por id em runtime
+	-- (game:GetObjects devolve "Invalid XML") e MeshPart.MeshId não é gravável
+	-- por script. Se a pasta sumir, cai no visual de esferas de antes em vez de
+	-- a criatura ficar invisível.
+	local molde = game:GetService("ServerStorage"):FindFirstChild("_Criaturas")
+	local arte = molde and molde:FindFirstChild(def.id)
+
+	if arte then
+		hrp.Transparency = 1
+		local copia = (arte :: Model):Clone()
+		-- o molde está com a base em y=0; desce meio corpo pra encostar no chão
+		local _, tam = copia:GetBoundingBox()
+		local ajuste = def.size.Y / 2
+		for _, d in copia:GetDescendants() do
+			if d:IsA("BasePart") then
+				d.Anchored = true
+				d.CanCollide = false
+				d.CanQuery = false
+				d.Parent = model
+				-- a criatura olha pro -Z do HRP, igual ao personagem
+				table.insert(decor, {
+					part = d,
+					offset = CFrame.new(0, -ajuste, 0) * (arte :: Model):GetPivot():Inverse() * d.CFrame,
+				})
+			end
+		end
+		copia:Destroy()
+		local _ = tam
+	else
+		-- PLANO B: o visual antigo de esferas, pra criatura nunca ficar invisível
+		local scale = def.size.X / 3
+		addDecor(Vector3.one * 1.2 * scale, CFrame.new(0, 0, 0), def.coreColor, Enum.Material.Neon)
+		for _, sx in { -0.7 * scale, 0.7 * scale } do
+			addDecor(
+				Vector3.one * 0.7 * scale,
+				CFrame.new(sx, 0.3 * scale, -1.2 * scale),
+				Color3.new(1, 1, 1),
+				Enum.Material.SmoothPlastic
+			)
+			addDecor(
+				Vector3.one * 0.34 * scale,
+				CFrame.new(sx, 0.3 * scale, -1.45 * scale),
+				Color3.fromRGB(15, 20, 25),
+				Enum.Material.SmoothPlastic
+			)
+		end
 	end
 
 	makeHealthBar(hrp, hum, def.nome, def.size.X * 1.6)

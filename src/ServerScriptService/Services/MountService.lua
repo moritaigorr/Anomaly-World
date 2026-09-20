@@ -1,0 +1,673 @@
+--!strict
+-- MountService.lua  (SERVIDOR)
+-- MONTARIA.
+--
+-- Regra de arquitetura: o servidor é dono de estar montado ou não, da montaria
+-- que é, e da velocidade. O cliente só PEDE (tecla H). Se o jogador mandar
+-- "montar" duas vezes por segundo, ou pedir uma montaria que não possui, ou
+-- tentar montar caindo do céu, quem diz não é este arquivo.
+--
+-- DECISÃO DE DESIGN: montaria não luta.
+-- Atacar, esquivar, bloquear ou usar poder DESMONTA. Levar dano derruba. Isso
+-- mantém o combate honesto (nada de kitar montado a 60 de velocidade) e dá à
+-- montaria um custo real: subir é trocar prontidão por velocidade. É a mesma
+-- lógica da corrida gastando a stamina da esquiva.
+--
+-- COMO O CORPO FUNCIONA. O cavalo é SOLDADO ao HumanoidRootPart e todas as
+-- peças dele são CanCollide = false. Quem anda continua sendo o Humanoid do
+-- jogador — não há física de veículo, não há AlignPosition brigando com o
+-- terreno, e a resposta ao input continua sendo a mesma do jogo a pé, que já
+-- está afinada. O cavaleiro sobe via HipHeight e o corpo do cavalo é encaixado
+-- por baixo, na altura exata do chão.
+--
+-- POR QUE MOTOR6D E NÃO SÓ SOLDA. A primeira versão soldava TUDO num bloco
+-- rígido: o cavalo deslizava de pernas duras enquanto o boneco fazia a animação
+-- de caminhada em cima. Lia como teletransporte, porque era — nada no cavalo se
+-- movia. Agora o corpo é uma árvore de juntas (quadris, joelhos, pescoço, cauda,
+-- tronco) e quem anima é o CLIENTE, em MountController, a 60 fps e de graça pro
+-- servidor. O servidor constrói o esqueleto; o cliente faz ele galopar.
+--
+-- E O CAVALEIRO. Sem animação publicada (AnimData está todo vazio) não dá pra
+-- "tocar" uma pose de montaria. Então a pose é feita na mão, girando o repouso
+-- das juntas do R15 — o que replica pra todo mundo — e o script Animate padrão
+-- é desligado pra não sobrescrever. Ao desmontar, tudo volta ao valor guardado.
+--
+-- DOIS FORMATOS DE RIG. O avatar novo da Roblox não usa mais Motor6D: as juntas
+-- são AnimationConstraint, com o repouso morando no Attachment0 (do membro PAI)
+-- e o Transform reservado pra animação. Os nomes das juntas são os mesmos, então
+-- a tabela de pose serve pros dois — só muda ONDE se escreve. Procurar só por
+-- Motor6D achava zero juntas e a pose não fazia absolutamente nada: o cavaleiro
+-- ficava de pernas retas, enfiadas dentro do barril.
+
+local CollectionService = game:GetService("CollectionService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local MountData = require(ReplicatedStorage.Shared.MountData)
+local Net = require(ReplicatedStorage.Shared.Net)
+local MovementService = require(script.Parent.MovementService)
+local PlayerState = require(script.Parent.PlayerState)
+
+local MountRequest = Net.get("MountRequest")
+local CombatFeedback = Net.get("CombatFeedback")
+
+local MountService = {}
+
+local MOUNT_COOLDOWN = 1.0 -- evita ligar/desligar em spam
+local TAG = "Montaria" -- como o cliente acha as montarias pra animar
+
+-- =============================================================== CORPO
+-- Cavalo estilizado. A silhueta é o que importa: dorso longo, pescoço em
+-- diagonal, cabeça baixa à frente. Se der pra reconhecer só pela sombra,
+-- funcionou (mesma régua das criaturas).
+local function piece(model: Model, size: Vector3, cf: CFrame, color: Color3, material: Enum.Material): Part
+	local p = Instance.new("Part")
+	p.Size = size
+	p.CFrame = cf
+	p.Color = color
+	p.Material = material
+	p.Anchored = false
+	p.CanCollide = false -- quem colide é o jogador; peça solta aqui vira briga de física
+	p.CanQuery = false
+	p.CanTouch = false
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	p.Massless = true
+	p.Parent = model
+	return p
+end
+
+local function buildSteedPrimitivas(m: MountData.Mount, rootCF: CFrame): (Model, Part)
+	local model = Instance.new("Model")
+	model.Name = "Montaria_" .. m.id
+	local L = m.length
+	local BACK = m.raise + 1.2 -- altura do dorso (onde a sela fica)
+
+	local root = piece(model, Vector3.new(1, 1, 1), rootCF, m.corpo, Enum.Material.SmoothPlastic)
+	root.Name = "Root"
+	root.Transparency = 1
+	model.PrimaryPart = root
+
+	-- FRENTE É -Z.
+	-- O personagem do Roblox olha pro -Z do próprio CFrame, e o cavalo é soldado
+	-- nesse CFrame: construir a cabeça em +Z deixava a montaria ANDANDO DE COSTAS.
+	local function at(x: number, y: number, z: number)
+		return rootCF * CFrame.new(x, y, z)
+	end
+
+	-- Peça alongada definida por ONDE COMEÇA e ONDE TERMINA, com o lookAt
+	-- resolvendo a orientação. A primeira versão usava CFrame.Angles e o pescoço
+	-- saía inclinado pra trás — girar +X manda o topo na direção da garupa.
+	-- Assim fica impossível montar de costas por engano.
+	local function limb(fromLocal: Vector3, toLocal: Vector3, w: number, h: number, color: Color3, material: Enum.Material)
+		local A = (rootCF * CFrame.new(fromLocal)).Position
+		local B = (rootCF * CFrame.new(toLocal)).Position
+		return piece(model, Vector3.new(w, h, (B - A).Magnitude), CFrame.lookAt((A + B) / 2, B), color, material)
+	end
+
+	-- JUNTA. C0 e C1 saem do CFrame atual das duas peças, então criar a junta
+	-- não move nada: ela nasce exatamente na pose montada. Girar o Transform
+	-- depois gira a peça em torno do pivô, e o pivô herda a orientação do cavalo
+	-- (X = lado, Y = cima, Z = garupa) — girar em X é sempre passada pra frente.
+	local function joint(name: string, p0: BasePart, p1: BasePart, pivot: CFrame): Motor6D
+		local j = Instance.new("Motor6D")
+		j.Name = name
+		j.Part0 = p0
+		j.Part1 = p1
+		j.C0 = p0.CFrame:Inverse() * pivot
+		j.C1 = p1.CFrame:Inverse() * pivot
+		j.Parent = p0
+		return j
+	end
+
+	-- peças que acompanham rigidamente um segmento articulado
+	local rigid: { [BasePart]: { BasePart } } = {}
+	local function tie(seg: BasePart, p: BasePart): BasePart
+		local list = rigid[seg]
+		if not list then
+			list = {}
+			rigid[seg] = list
+		end
+		table.insert(list, p)
+		return p
+	end
+
+	-- BARRIL: fundo e estreito. A primeira versão era 3x3 e lia como caixa marrom.
+	-- O barril é o TRONCO — tudo que não articula pendura nele, e ele mesmo
+	-- articula na raiz pra poder subir e descer no galope.
+	local body = piece(model, Vector3.new(2.2, 2.4, L * 0.86), at(0, BACK - 1.2, 0), m.corpo, Enum.Material.SmoothPlastic)
+	body.Name = "Body"
+	joint("Body", root, body, at(0, BACK - 1.2, 0))
+
+	tie(body, piece(model, Vector3.new(2.3, 2.5, L * 0.26), at(0, BACK - 1.15, -L * 0.34), m.corpo, Enum.Material.SmoothPlastic))
+	tie(body, piece(model, Vector3.new(2.25, 2.4, L * 0.24), at(0, BACK - 1.05, L * 0.34), m.corpo, Enum.Material.SmoothPlastic))
+
+	-- PESCOÇO e CABEÇA — um segmento só, articulado na base
+	local neckBase = Vector3.new(0, BACK - 0.15, -L * 0.31)
+	local neckTop = Vector3.new(0, BACK + 2.95, -L * 0.54)
+	local neck = limb(neckBase, neckTop, 1.45, 1.6, m.corpo, Enum.Material.SmoothPlastic)
+	neck.Name = "Neck"
+	joint("Neck", body, neck, at(neckBase.X, neckBase.Y, neckBase.Z))
+
+	local muzzle = Vector3.new(0, BACK + 1.85, -L * 0.86)
+	tie(neck, limb(neckTop + Vector3.new(0, -0.15, 0), muzzle, 1.15, 1.25, m.corpo, Enum.Material.SmoothPlastic))
+	local muzzleW = (rootCF * CFrame.new(muzzle)).Position
+	local headDir = (muzzleW - (rootCF * CFrame.new(neckTop)).Position).Unit
+	tie(neck, piece(model, Vector3.new(0.92, 0.88, 1.0), CFrame.lookAt(muzzleW, muzzleW + headDir), m.corpo, Enum.Material.SmoothPlastic))
+	tie(neck, piece(model, Vector3.new(1.22, 0.26, 0.7), CFrame.lookAt(muzzleW + headDir * -0.5, muzzleW + headDir), m.sela, Enum.Material.Fabric))
+	for _, sx in { -1, 1 } do
+		tie(neck, limb(neckTop + Vector3.new(sx * 0.36, 0.1, 0.25), neckTop + Vector3.new(sx * 0.44, 0.95, 0.45), 0.26, 0.26, m.corpo, Enum.Material.SmoothPlastic))
+	end
+	-- rédeas: do focinho até a mão do cavaleiro
+	for _, sx in { -1, 1 } do
+		tie(neck, limb(muzzle + Vector3.new(sx * 0.5, 0.1, 0), Vector3.new(sx * 0.6, BACK + 0.9, -0.6), 0.12, 0.12, m.sela, Enum.Material.Fabric))
+	end
+
+	-- CRINA ao longo da linha do pescoço
+	for i = 0, 5 do
+		local f = i / 5
+		local base = neckBase:Lerp(neckTop, 0.25 + f * 0.72)
+		tie(neck, limb(base + Vector3.new(0, 0.35, 0.28), base + Vector3.new(0, -0.55, 0.72), 0.24, 0.24, m.crina, Enum.Material.Fabric))
+	end
+
+	-- CAUDA em duas partes: toco grosso na garupa e rabada caindo. Uma barra reta
+	-- e fina lia como TÁBUA PRETA espetada na traseira. Articula pra balançar.
+	local tailBase = Vector3.new(0, BACK - 0.3, L * 0.4)
+	local tail = limb(tailBase, Vector3.new(0, BACK - 1.1, L * 0.56), 0.6, 0.6, m.crina, Enum.Material.Fabric)
+	tail.Name = "Tail"
+	joint("Tail", body, tail, at(tailBase.X, tailBase.Y, tailBase.Z))
+	tie(tail, limb(Vector3.new(0, BACK - 1.0, L * 0.55), Vector3.new(0, BACK - 3.3, L * 0.6), 0.52, 0.42, m.crina, Enum.Material.Fabric))
+
+	-- PERNAS longas: da barriga até o chão são ~2,2 studs de vão. Perna curta
+	-- fazia o cavalo ler como porco. Cada perna é quadril + joelho, e é isso que
+	-- o cliente balança — sem elas o cavalo desliza de pernas duras.
+	for _, sx in { -1, 1 } do
+		for _, sz in { -1, 1 } do
+			local legZ = sz * L * 0.3
+			local back = sz > 0 and -0.18 or 0
+			local side = sx < 0 and "L" or "R"
+			local ends = sz < 0 and "F" or "B"
+
+			local upper = piece(model, Vector3.new(0.9, 1.9, 1.1), at(sx * 0.95, BACK - 2.5, legZ), m.corpo, Enum.Material.SmoothPlastic)
+			local lower = piece(model, Vector3.new(0.6, 1.9, 0.6), at(sx * 0.95, BACK - 4.0, legZ + back), m.corpo, Enum.Material.SmoothPlastic)
+			local hoof = piece(model, Vector3.new(0.78, 0.5, 0.9), at(sx * 0.95, BACK - 4.85, legZ + back), m.casco, Enum.Material.Slate)
+			upper.Name = "Upper" .. side .. ends
+			lower.Name = "Lower" .. side .. ends
+
+			-- pivô do quadril no TOPO da coxa, joelho na junção coxa/canela
+			joint("Hip" .. side .. ends, body, upper, at(sx * 0.95, BACK - 1.55, legZ))
+			joint("Knee" .. side .. ends, upper, lower, at(sx * 0.95, BACK - 3.15, legZ + back * 0.5))
+			tie(lower, hoof)
+		end
+	end
+
+	-- SELA e manta
+	tie(body, piece(model, Vector3.new(2.5, 0.28, 3.0), at(0, BACK + 0.14, 0.1), m.manta, Enum.Material.Fabric))
+	tie(body, piece(model, Vector3.new(2.0, 0.55, 2.3), at(0, BACK + 0.42, 0.1), m.sela, Enum.Material.Fabric))
+	tie(body, piece(model, Vector3.new(2.1, 0.8, 0.42), at(0, BACK + 0.75, 1.25), m.sela, Enum.Material.Fabric))
+	tie(body, piece(model, Vector3.new(1.75, 0.6, 0.36), at(0, BACK + 0.68, -1.05), m.sela, Enum.Material.Fabric))
+	-- estribo onde o pé REALMENTE cai depois do afastamento de 38 graus
+	for _, sx in { -1, 1 } do
+		tie(body, piece(model, Vector3.new(0.12, 1.3, 0.12), at(sx * 1.45, BACK - 0.5, 0.1), m.sela, Enum.Material.Fabric))
+		tie(body, piece(model, Vector3.new(0.6, 0.16, 0.45), at(sx * 1.45, BACK - 1.2, 0.1), m.casco, Enum.Material.Metal))
+	end
+
+	-- anomalia: Neon em PONTO, nunca em bloco
+	if m.brilho then
+		for _, sx in { -1, 1 } do
+			local eye = tie(neck, piece(model, Vector3.new(0.2, 0.2, 0.2), CFrame.new(muzzleW) * CFrame.new(sx * 0.5, 0.4, 0.6), m.brilho, Enum.Material.Neon))
+			if eye:IsA("Part") then
+				eye.Shape = Enum.PartType.Ball
+			end
+		end
+		local aura = Instance.new("ParticleEmitter")
+		aura.Rate = 9
+		aura.Lifetime = NumberRange.new(0.6, 1.1)
+		aura.Speed = NumberRange.new(0.5, 1.6)
+		aura.SpreadAngle = Vector2.new(180, 180)
+		aura.LightEmission = 0.8
+		aura.LightInfluence = 0
+		aura.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.8), NumberSequenceKeypoint.new(1, 0) })
+		aura.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.4), NumberSequenceKeypoint.new(1, 1) })
+		aura.Color = ColorSequence.new(m.brilho)
+		aura.Parent = root
+	end
+
+	-- solda o que não articula no seu segmento
+	for seg, list in rigid do
+		for _, p in list do
+			local w = Instance.new("WeldConstraint")
+			w.Part0 = seg
+			w.Part1 = p
+			w.Parent = seg
+		end
+	end
+
+	return model, root
+end
+
+-- =============================================================== CORPO (MALHA)
+-- O cavalo de primitivas continua logo acima, como plano B. Este aqui é o
+-- corpo de verdade: uma malha SEGMENTADA (corpo, cabeça, quatro pernas, cauda)
+-- gerada pra este jogo, rearticulada com os mesmos Motor6D de antes — então o
+-- galope que já estava afinado continua valendo, sem tocar no MountController.
+--
+-- MEDIDAS DO MOLDE CRU (medidas, não estimadas), com o pivô no centro do corpo:
+--   casco .......... 2,765 abaixo do centro
+--   dorso/sela ..... 1,295 acima  -> 4,06 do casco à sela
+--   cabeça ......... +Z (o molde olha pro +Z; o personagem do Roblox olha pro
+--                    -Z, então o giro de 180° é aplicado AQUI, na montagem)
+-- Medidas do molde CRU, tiradas do proprio modelo e nao estimadas:
+--   casco ..... 4,291 abaixo do centro do corpo
+--   sela ...... 6,153 acima do casco
+--   barril .... 2,03 de largura (meia 1,02) -- bem mais estreito que o poney
+--               anterior, entao a perna do cavaleiro sobra com folga
+local MOLDE_CASCO = 4.291
+local MOLDE_DORSO = 6.153
+-- A SELA NÃO FICA NO CENTRO DO CAVALO, fica adiantada sobre a cernelha. Como o
+-- cavaleiro está preso ao HumanoidRootPart e o corpo é posicionado em relação a
+-- ele, alinhar o CENTRO do cavalo com o cavaleiro deixava ele montado na garupa,
+-- com a sela visível à frente. Recuar o cavalo por este tanto põe a sela embaixo
+-- de quem senta.
+local MOLDE_SELA_Z = 0.55
+
+local function buildSteedMalha(m: MountData.Mount, rootCF: CFrame): (Model?, Part?)
+	local pasta = game:GetService("ServerStorage"):FindFirstChild("_Montarias")
+	local arte = pasta and pasta:FindFirstChild("cavalo")
+	if not (arte and arte:IsA("Model")) then
+		return nil, nil
+	end
+
+	local model = Instance.new("Model")
+	model.Name = "Montaria_" .. m.id
+
+	local root = piece(model, Vector3.new(1, 1, 1), rootCF, m.corpo, Enum.Material.SmoothPlastic)
+	root.Name = "Root"
+	root.Transparency = 1
+	model.PrimaryPart = root
+
+	-- escala pra sela cair exatamente na altura que o cavaleiro vai ocupar
+	local escala = (m.raise + 1.2) / MOLDE_DORSO
+	local clone = arte:Clone()
+	local ok = pcall(function()
+		clone:ScaleTo(escala)
+	end)
+	if not ok then
+		clone:Destroy()
+		model:Destroy()
+		return nil, nil
+	end
+	-- pivô do molde = centro do corpo. Posiciona o centro na altura certa e gira
+	-- 180° pra cabeça apontar pro -Z do cavaleiro.
+	clone:PivotTo(
+		rootCF
+			* CFrame.new(0, MOLDE_CASCO * escala, MOLDE_SELA_Z * escala)
+			* CFrame.Angles(0, math.pi, 0)
+	)
+
+	local corpo = clone:FindFirstChild("Body", true) :: BasePart?
+	if not corpo then
+		clone:Destroy()
+		model:Destroy()
+		return nil, nil
+	end
+
+	-- traz as peças pro modelo da montaria
+	local segmentos: { [string]: BasePart } = {}
+	for _, d in clone:GetDescendants() do
+		if d:IsA("BasePart") then
+			segmentos[d.Name] = d
+			d.Anchored = false
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+			d.Massless = true
+			d.Parent = model
+		end
+	end
+	clone:Destroy()
+
+	-- JUNTA. Mesmo helper de antes: C0/C1 saem do CFrame atual, então criar a
+	-- junta não move nada. O pivô herda a orientação da RAIZ (não a da malha),
+	-- então girar em X é sempre passada pra frente — que é o que o
+	-- MountController assume.
+	local giro = rootCF - rootCF.Position
+	local function joint(nome: string, p0: BasePart, p1: BasePart, pivotPos: Vector3): Motor6D
+		local pivot = CFrame.new(pivotPos) * giro
+		local j = Instance.new("Motor6D")
+		j.Name = nome
+		j.Part0 = p0
+		j.Part1 = p1
+		j.C0 = p0.CFrame:Inverse() * pivot
+		j.C1 = p1.CFrame:Inverse() * pivot
+		j.Parent = p0
+		return j
+	end
+
+	joint("Body", root, corpo, corpo.Position)
+
+	-- quadris: pivô no TOPO de cada perna
+	for _, chave in { "LF", "RF", "LB", "RB" } do
+		local perna = segmentos["Leg" .. chave]
+		if perna then
+			local topo = perna.Position + perna.CFrame.UpVector * (perna.Size.Y / 2)
+			joint("Hip" .. chave, corpo, perna, topo)
+		end
+	end
+
+	-- pescoço: pivô na junção corpo/cabeça, não no centro da cabeça
+	local cabeca = segmentos.Head
+	if cabeca then
+		joint("Neck", corpo, cabeca, cabeca.Position - cabeca.CFrame.UpVector * (cabeca.Size.Y * 0.35))
+	end
+	local cauda = segmentos.Tail
+	if cauda then
+		joint("Tail", corpo, cauda, cauda.Position + cauda.CFrame.UpVector * (cauda.Size.Y / 2))
+	end
+
+	-- anomalia: o ponto quente das montarias raras
+	if m.brilho and cabeca then
+		local aura = Instance.new("ParticleEmitter")
+		aura.Rate = 9
+		aura.Lifetime = NumberRange.new(0.6, 1.1)
+		aura.Speed = NumberRange.new(0.5, 1.6)
+		aura.SpreadAngle = Vector2.new(180, 180)
+		aura.LightEmission = 0.8
+		aura.LightInfluence = 0
+		aura.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.8), NumberSequenceKeypoint.new(1, 0) })
+		aura.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.4), NumberSequenceKeypoint.new(1, 1) })
+		aura.Color = ColorSequence.new(m.brilho)
+		aura.Parent = cabeca
+	end
+
+	return model, root
+end
+
+-- Escolhe o corpo: malha quando o molde existe, primitivas quando não.
+local function buildSteed(m: MountData.Mount, rootCF: CFrame): (Model, Part)
+	local model, root = buildSteedMalha(m, rootCF)
+	if model and root then
+		return model, root
+	end
+	return buildSteedPrimitivas(m, rootCF)
+end
+
+-- =============================================================== CAVALEIRO
+-- Pose de montaria à mão. Sem animação publicada, girar o C0 é o único jeito de
+-- posar o R15 de um jeito que TODO MUNDO veja (C0 replica; Transform não).
+-- Convenção do R15 já em T-pose: X é o lado, Y é cima, Z é a garupa. Girar +X
+-- joga o membro pra FRENTE, girar -X pra trás.
+local POSE: { [string]: CFrame } = {
+	Waist = CFrame.Angles(math.rad(-10), 0, 0), -- tronco inclina à frente
+	Neck = CFrame.Angles(math.rad(8), 0, 0), -- e a cabeça compensa, olhando o horizonte
+
+	-- coxas à frente e ABERTAS: o cavaleiro escarrancha o barril (2,5 de largura)
+	-- ABERTURA DAS COXAS: 52 graus, nao 24 como na primeira versao. O barril do
+	-- cavalo de malha tem meia-largura 1,47 na montaria comum e chega a 1,60 na
+	-- maior; com pouca abertura o joelho para DENTRO do cavalo e a perna some.
+	-- Joelho menos dobrado (44) tambem alonga o alcance lateral.
+	LeftHip = CFrame.Angles(math.rad(42), 0, math.rad(-52)),
+	RightHip = CFrame.Angles(math.rad(42), 0, math.rad(52)),
+	LeftKnee = CFrame.Angles(math.rad(-44), 0, 0), -- canela cai reta pro estribo
+	RightKnee = CFrame.Angles(math.rad(-44), 0, 0),
+	LeftAnkle = CFrame.Angles(math.rad(14), 0, 0),
+	RightAnkle = CFrame.Angles(math.rad(14), 0, 0),
+
+	-- braços à frente, cotovelo dobrado: mãos na altura das rédeas
+	LeftShoulder = CFrame.Angles(math.rad(50), 0, math.rad(12)),
+	RightShoulder = CFrame.Angles(math.rad(50), 0, math.rad(-12)),
+	LeftElbow = CFrame.Angles(math.rad(28), 0, 0),
+	RightElbow = CFrame.Angles(math.rad(28), 0, 0),
+}
+
+-- Aplica (ou desfaz) uma rotação no repouso de uma junta, guardando o valor
+-- original no próprio objeto. Se o jogador morrer montado, o personagem novo
+-- nasce com juntas novas e limpas — nada fica torto.
+local function girarRepouso(alvo: Instance, ler: () -> CFrame, escrever: (CFrame) -> (), rot: CFrame, on: boolean)
+	if on then
+		if alvo:GetAttribute("MountBase") == nil then
+			alvo:SetAttribute("MountBase", ler())
+		end
+		escrever((alvo:GetAttribute("MountBase") :: CFrame) * rot)
+	else
+		local base = alvo:GetAttribute("MountBase")
+		if base then
+			escrever(base :: CFrame)
+			alvo:SetAttribute("MountBase", nil)
+		end
+	end
+end
+
+local function poseRider(char: Model, on: boolean)
+	local posadas = 0
+	for _, d in char:GetDescendants() do
+		local rot = POSE[d.Name]
+		if rot then
+			if d:IsA("Motor6D") then
+				local j = d :: Motor6D
+				girarRepouso(j, function()
+					return j.C0
+				end, function(cf)
+					j.C0 = cf
+				end, rot, on)
+				posadas += 1
+			elseif d:IsA("AnimationConstraint") then
+				-- rig novo: o repouso mora no Attachment0, que fica no membro PAI
+				local a0 = (d :: AnimationConstraint).Attachment0
+				if a0 then
+					girarRepouso(a0, function()
+						return a0.CFrame
+					end, function(cf)
+						a0.CFrame = cf
+					end, rot, on)
+					posadas += 1
+				end
+			end
+		end
+	end
+	if on and posadas == 0 then
+		warn("[MountService] rig do cavaleiro sem juntas conhecidas — pose de montaria nao aplicada")
+	end
+
+	-- desliga o Animate: senão a animação de caminhada continua rodando por cima
+	-- da pose e o boneco "anda" parado em cima do cavalo. Quem para as faixas já
+	-- tocando é o cliente (MountController) — só o dono do personagem consegue.
+	local animate = char:FindFirstChild("Animate")
+	if animate and animate:IsA("LocalScript") then
+		animate.Disabled = on
+	end
+	char:SetAttribute("Montado", on or nil)
+end
+
+-- =============================================================== ESTADO
+local active: { [Player]: { model: Model, id: string, baseHip: number, baseSpeed: number } } = {}
+
+function MountService.isMounted(player: Player): boolean
+	return active[player] ~= nil
+end
+
+function MountService.dismount(player: Player, reason: string?)
+	local entry = active[player]
+	if not entry then
+		return
+	end
+	active[player] = nil
+
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if hum then
+		hum.HipHeight = entry.baseHip
+		hum.JumpPower = 50
+	end
+	if char then
+		poseRider(char, false)
+	end
+	entry.model:Destroy()
+
+	local s = PlayerState.get(player)
+	if s then
+		s.mounted = nil
+	end
+	-- quem escreve WalkSpeed continua sendo o MovementService
+	MovementService.applyWalkSpeed(player)
+	if reason then
+		CombatFeedback:FireClient(player, {
+			kind = "notify",
+			text = reason,
+			color = Color3.fromRGB(226, 200, 140),
+		})
+	end
+end
+
+local function mount(player: Player, id: string)
+	local s = PlayerState.get(player)
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not (s and hum and hrp and char) then
+		return
+	end
+
+	-- VALIDAÇÕES. O cliente pede; aqui é onde o pedido morre se não fizer sentido.
+	if hum.Health <= 0 then
+		return
+	end
+	local now = os.clock()
+	if now < (s.mountCdUntil or 0) then
+		return
+	end
+	if os.clock() < s.stunUntil then
+		return -- atordoado não sobe em cavalo
+	end
+	-- no ar não monta: senão dá pra usar a montaria como plataforma voadora
+	if hum:GetState() == Enum.HumanoidStateType.Freefall or hum:GetState() == Enum.HumanoidStateType.Jumping then
+		return
+	end
+
+	local m = MountData.get(id)
+	if not m then
+		return
+	end
+
+	s.mountCdUntil = now + MOUNT_COOLDOWN
+
+	-- levanta o cavaleiro e encaixa o corpo por baixo, no chão exato
+	local baseHip = hum.HipHeight
+	local baseSpeed = hum.WalkSpeed
+	hum.HipHeight = baseHip + m.raise
+	task.wait() -- deixa o personagem subir antes de medir
+
+	if not (char.Parent and hrp.Parent) then
+		hum.HipHeight = baseHip
+		return
+	end
+
+	-- o chão fica em HRP.Y - HipHeight - metade da altura do HRP
+	local groundOffset = -(hum.HipHeight + hrp.Size.Y / 2)
+	local rootCF = hrp.CFrame * CFrame.new(0, groundOffset, 0)
+
+	local model, root = buildSteed(m, rootCF)
+
+	-- quem é o cavaleiro: o cliente usa isso pra calar os passos e parar as
+	-- animações do R15 montado
+	local rider = Instance.new("ObjectValue")
+	rider.Name = "Rider"
+	rider.Value = char
+	rider.Parent = model
+
+	-- POSA ANTES DE PUBLICAR O CAVALO. Desligar o Animate é o que faz a faixa de
+	-- caminhada parar; se o modelo chegasse primeiro, o cliente pararia as faixas
+	-- e o Animate — ainda vivo por um quadro — já teria religado a de andar.
+	hum.JumpPower = m.jump
+	poseRider(char, true)
+
+	-- marca ANTES de entrar no workspace: assim o modelo chega inteiro e já
+	-- etiquetado no cliente, e a animação começa no primeiro quadro
+	CollectionService:AddTag(model, TAG)
+	model.Parent = workspace
+
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = hrp
+	weld.Part1 = root
+	weld.Parent = root
+
+	active[player] = { model = model, id = id, baseHip = baseHip, baseSpeed = baseSpeed }
+	s.mounted = id
+	MovementService.applyWalkSpeed(player)
+
+	CombatFeedback:FireClient(player, {
+		kind = "notify",
+		text = "MONTOU — " .. m.nome,
+		color = Color3.fromRGB(226, 200, 140),
+	})
+end
+
+local function onRequest(player: Player, wanted: unknown)
+	if MountService.isMounted(player) then
+		MountService.dismount(player)
+		return
+	end
+	local id = typeof(wanted) == "string" and wanted or MountData.DEFAULT
+	mount(player, id)
+end
+
+-- Chamado pelo combate: qualquer ação ofensiva ou defensiva derruba.
+function MountService.breakOnAction(player: Player)
+	if active[player] then
+		MountService.dismount(player, "VOCÊ DESMONTOU")
+	end
+end
+
+function MountService.breakOnDamage(player: Player)
+	if active[player] then
+		MountService.dismount(player, "DERRUBADO DA MONTARIA")
+	end
+end
+
+function MountService.Start()
+	MountRequest.OnServerEvent:Connect(onRequest)
+
+	-- MONTARIA NÃO LUTA. Escutamos os mesmos remotes que o combate escuta, em
+	-- vez de pedir ao CombatService/MovementService que nos chamem. Assim a
+	-- dependência aponta só numa direção (MountService -> MovementService) e o
+	-- MovementService continua sem saber que montaria existe — o que mantém ele
+	-- como dono único de WalkSpeed.
+	for _, remote in { "AttackRequest", "HeavyRequest", "UltimateRequest", "PowerRequest", "DashRequest" } do
+		Net.get(remote).OnServerEvent:Connect(function(player)
+			MountService.breakOnAction(player)
+		end)
+	end
+	Players.PlayerRemoving:Connect(function(player)
+		local entry = active[player]
+		if entry then
+			entry.model:Destroy()
+			active[player] = nil
+		end
+	end)
+
+	local function hook(player: Player)
+		player.CharacterRemoving:Connect(function()
+			local entry = active[player]
+			if entry then
+				entry.model:Destroy()
+				active[player] = nil
+				local s = PlayerState.get(player)
+				if s then
+					s.mounted = nil
+				end
+			end
+		end)
+	end
+	Players.PlayerAdded:Connect(function(player)
+		player.CharacterAdded:Connect(function()
+			hook(player)
+		end)
+	end)
+	for _, player in Players:GetPlayers() do
+		hook(player)
+	end
+
+	print("[MountService] pronto — H monta/desmonta")
+end
+
+return MountService

@@ -8,7 +8,6 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
 
 local BossData = require(ReplicatedStorage.Shared.BossData)
 local Net = require(ReplicatedStorage.Shared.Net)
@@ -22,6 +21,7 @@ local BossService = {}
 -- círculo ritual, bem longe da cidade (igual a Wilds.BOSS_POS)
 local SPAWN_POS = Vector3.new(-300, 5, 300)
 local RESPAWN_DELAY = 20
+local ARENA_RADIUS = 86
 
 -- avisa TODOS os clientes (toast na tela)
 local function broadcast(text: string, color: Color3?)
@@ -107,12 +107,13 @@ local function spawnBoss()
 	hum.Parent = model
 
 	model.PrimaryPart = hrp
-	-- assenta o boss no chão (raycast), qualquer que seja o mapa
-	local rp = RaycastParams.new()
-	rp.FilterType = Enum.RaycastFilterType.Exclude
-	rp.FilterDescendantsInstances = { model }
-	local hit = workspace:Raycast(SPAWN_POS + Vector3.new(0, 300, 0), Vector3.new(0, -1000, 0), rp)
-	local restY = (hit and hit.Position.Y or 0) + hrp.Size.Y / 2
+	-- O círculo ritual é uma plataforma construída em cota própria. Um raycast
+	-- amplo aqui podia acertar a montanha atrás dele antes de chegar à arena,
+	-- colocando o boss dezenas de studs acima do círculo e fazendo-o atravessar
+	-- o relevo durante a perseguição. A altura do centro é deliberadamente
+	-- alinhada ao piso do círculo (SPAWN_POS.Y), e o root tem metade da altura
+	-- abaixo dele para encostar no piso de pedra/terra.
+	local restY = SPAWN_POS.Y
 	hrp.CFrame = CFrame.new(SPAWN_POS.X, restY, SPAWN_POS.Z)
 
 	-- ------- decoração ancorada que segue o corpo (sem física/solda) -------
@@ -125,35 +126,64 @@ local function spawnBoss()
 		table.insert(decor, { part = part, offset = offset })
 	end
 
-	-- núcleo emissivo
-	local corePart = Instance.new("Part")
-	corePart.Shape = Enum.PartType.Ball
-	corePart.Size = Vector3.new(4, 4, 4)
-	corePart.Material = Enum.Material.Neon
-	corePart.Color = boss.trueFormColor
-	addDecor(corePart, CFrame.new(0, 0, 0))
+	-- ---------------- CORPO VISÍVEL ----------------
+	-- O boss era um NÚCLEO NEON de 4 studs com oito espinhos em volta e dois
+	-- olhos — uma bola espinhenta, não um rei morto-vivo. Agora vem de
+	-- ServerStorage._Criaturas.BOSS, uma malha gerada pra ele: coroa de ferro
+	-- enferrujado, peles reais sobre armadura enegrecida e espadão.
+	--
+	-- Mesmo arranjo das criaturas comuns: o corpo de colisão continua existindo
+	-- e vira invisível, então nada em combate, agro ou barra de vida muda. Sem
+	-- o molde (ele mora no arquivo do place, não no git), cai no visual antigo.
+	local moldes = game:GetService("ServerStorage"):FindFirstChild("_Criaturas")
+	local arte = moldes and moldes:FindFirstChild("BOSS")
 
-	-- espinhos ao redor
-	for i = 1, 8 do
-		local ang = (i / 8) * math.pi * 2
-		local spike = Instance.new("Part")
-		spike.Size = Vector3.new(1.2, 5, 1.2)
-		spike.Material = Enum.Material.SmoothPlastic
-		spike.Color = Color3.fromRGB(30, 15, 15)
-		addDecor(
-			spike,
-			CFrame.new(math.cos(ang) * 4, 0, math.sin(ang) * 4) * CFrame.Angles(math.rad(90), ang, 0)
-		)
-	end
+	if arte and arte:IsA("Model") then
+		hrp.Transparency = 1
+		local copia = arte:Clone()
+		local pivo = copia:GetPivot()
+		for _, d in copia:GetDescendants() do
+			if d:IsA("BasePart") then
+				addDecor(d, CFrame.new(0, -hrp.Size.Y / 2, 0) * (pivo:Inverse() * d.CFrame))
+			end
+		end
+		copia:Destroy()
+		-- a anomalia continua marcando presença, agora como brasa no peito
+		local brasa = Instance.new("Part")
+		brasa.Shape = Enum.PartType.Ball
+		brasa.Size = Vector3.new(1.1, 1.1, 1.1)
+		brasa.Material = Enum.Material.Neon
+		brasa.Color = boss.trueFormColor
+		addDecor(brasa, CFrame.new(0, 1.2, -1.4))
+	else
+		-- PLANO B: o visual antigo de núcleo e espinhos
+		local corePart = Instance.new("Part")
+		corePart.Shape = Enum.PartType.Ball
+		corePart.Size = Vector3.new(4, 4, 4)
+		corePart.Material = Enum.Material.Neon
+		corePart.Color = boss.trueFormColor
+		addDecor(corePart, CFrame.new(0, 0, 0))
 
-	-- dois olhos brilhantes
-	for _, side in { -2, 2 } do
-		local eye = Instance.new("Part")
-		eye.Shape = Enum.PartType.Ball
-		eye.Size = Vector3.new(1.4, 1.4, 1.4)
-		eye.Material = Enum.Material.Neon
-		eye.Color = Color3.fromRGB(255, 230, 120)
-		addDecor(eye, CFrame.new(side, 1.5, -3.4))
+		for i = 1, 8 do
+			local ang = (i / 8) * math.pi * 2
+			local spike = Instance.new("Part")
+			spike.Size = Vector3.new(1.2, 5, 1.2)
+			spike.Material = Enum.Material.SmoothPlastic
+			spike.Color = Color3.fromRGB(30, 15, 15)
+			addDecor(
+				spike,
+				CFrame.new(math.cos(ang) * 4, 0, math.sin(ang) * 4) * CFrame.Angles(math.rad(90), ang, 0)
+			)
+		end
+
+		for _, side in { -2, 2 } do
+			local eye = Instance.new("Part")
+			eye.Shape = Enum.PartType.Ball
+			eye.Size = Vector3.new(1.4, 1.4, 1.4)
+			eye.Material = Enum.Material.Neon
+			eye.Color = Color3.fromRGB(255, 230, 120)
+			addDecor(eye, CFrame.new(side, 1.5, -3.4))
+		end
 	end
 
 	local function updateDecor()
@@ -168,6 +198,7 @@ local function spawnBoss()
 	bb.Size = UDim2.fromScale(10, 1.2)
 	bb.StudsOffset = Vector3.new(0, 7, 0)
 	bb.AlwaysOnTop = true
+	bb.MaxDistance = 220 -- o boss é marco de arena: some de longe, não some perto
 	bb.Parent = hrp
 	local bg = Instance.new("Frame")
 	bg.Size = UDim2.fromScale(1, 0.5)
@@ -251,6 +282,15 @@ local function spawnBoss()
 		if flat.Magnitude > boss.attackRange then
 			local step = flat.Unit * phase.speed * dt
 			local newPos = hrp.Position + step
+			-- O boss deve dominar a arena ritual, não atravessar a cidade atrás
+			-- de um jogador que fugiu. Limitar apenas o deslocamento horizontal
+			-- preserva a perseguição dentro do encontro e impede atravessar
+			-- montanhas, muralhas e construções.
+			local arenaOffset = Vector3.new(newPos.X - SPAWN_POS.X, 0, newPos.Z - SPAWN_POS.Z)
+			if arenaOffset.Magnitude > ARENA_RADIUS then
+				local edge = arenaOffset.Unit * ARENA_RADIUS
+				newPos = Vector3.new(SPAWN_POS.X + edge.X, restY, SPAWN_POS.Z + edge.Z)
+			end
 			hrp.CFrame = CFrame.lookAt(
 				Vector3.new(newPos.X, restY, newPos.Z),
 				Vector3.new(target.Position.X, restY, target.Position.Z)

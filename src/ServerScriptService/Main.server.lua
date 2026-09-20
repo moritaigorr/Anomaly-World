@@ -71,6 +71,7 @@ end
 startService("DataService")
 startService("CombatService")
 startService("MovementService")
+startService("MountService")
 startService("CoreService")
 startService("EnemyService")
 startService("BossService")

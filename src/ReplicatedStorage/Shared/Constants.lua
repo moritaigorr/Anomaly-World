@@ -41,21 +41,11 @@ Constants.Combat = {
 	HitStop = 0.06,      -- segundos de congelamento no impacto (feedback)
 }
 
-Constants.Block = {
-	ParryWindow = 0.45,  -- segundos após iniciar o bloqueio em que um hit vira parry
-	ParryStun = 1.5,     -- por quanto tempo o inimigo fica atordoado ao ser defletido
-	ParryPostureDamage = 45, -- guarda que o parry arranca do inimigo
-	BlockChip = 0.15,    -- fração do dano que ainda passa segurando o bloqueio (0 = zero)
-}
-
--- POSTURE (guarda): bloquear gasta; zerou = quebra de guarda e você fica exposto.
-Constants.Posture = {
-	Max = 100,
-	RegenPerSec = 14,
-	RegenDelay = 1.5,     -- segundos sem apanhar até a guarda voltar a recuperar
-	BlockCost = 18,       -- posture perdida ao aparar um golpe segurando o bloqueio
-	BreakStun = 2.0,      -- tempo atordoado quando sua guarda quebra
-}
+-- A GUARDA DO JOGADOR FOI REMOVIDA. Não existe mais bloqueio nem parry: o
+-- botão direito não faz nada e a posture do jogador deixou de existir junto
+-- com o recurso que só ela consumia. A guarda do INIMIGO continua viva e é
+-- outro sistema — mora em atributos no Model (Constants.Enemy.Posture) e quem
+-- a quebra é o ataque pesado (F) e o ultimate.
 
 -- ATAQUE PESADO (F): lento, forte, e quebra a guarda do inimigo.
 Constants.Heavy = {
@@ -67,11 +57,10 @@ Constants.Heavy = {
 	Knockback = 60,
 }
 
--- ULTIMATE (G): enche batendo e defletindo; solta um estouro em área.
+-- ULTIMATE (G): enche BATENDO (o parry, que também carregava, não existe mais).
 Constants.Ultimate = {
 	Max = 100,
 	GainPerDamage = 0.30, -- carga por ponto de dano causado
-	GainPerParry = 25,
 	Damage = 180,
 	Radius = 26,
 }
@@ -96,8 +85,7 @@ Constants.Enemy = {
 -- UNICA autoridade que escreve WalkSpeed -- se houver outro escritor, os dois
 -- brigam e o jogador sente a velocidade "pular".
 Constants.Move = {
-	Walk = 16,     -- caminhada normal
-	Blocking = 8,  -- de guarda alta: o peso do souls-like
+	Walk = 16, -- caminhada normal
 }
 
 -- CORRIDA (segurar Shift). Divide a MESMA stamina da esquiva: correr o mapa

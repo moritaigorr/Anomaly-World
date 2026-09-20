@@ -8,10 +8,12 @@
 -- no eixo Z) formando o "A", e a empena é escalonada. WedgePart com rotação dupla
 -- é imprevisível de orientação — foi o que quebrou a versão anterior.
 
-local Terrain = workspace.Terrain
 
+local Assets = require(script.Parent.Assets)
 local Build = require(script.Parent.Build)
+local Forge = require(script.Parent.Forge)
 local Market = require(script.Parent.Market)
+local Tavern = require(script.Parent.Tavern)
 local C = Build.C
 
 local Town = {}
@@ -25,9 +27,29 @@ Town.MAIN_ROAD_W = 22
 -- table.insert receber nil e DERRUBAVA a construção da cidade inteira.
 local doorsteps: { Vector3 } = {}
 
+-- Pegada de cada casa construída. Serve pra plantar os props de rua ENCOSTADOS
+-- em alguma coisa: barril largado no meio de um descampado branco não conta
+-- história nenhuma, e era exatamente o que o espalhamento aleatório produzia.
+type Pegada = { pos: Vector3, w: number, d: number, ang: number }
+local pegadas: { Pegada } = {}
+
 -- ================================================================= CASA
 -- Encara +Z. w = largura (X), d = profundidade (Z).
 local function house(pos: Vector3, w: number, d: number, floors: number, ang: number, roofTile: boolean)
+	-- FUNDAÇÃO. As casas eram as últimas construções ainda erguidas a partir de
+	-- y = 0. Os props já tinham sido corrigidos pra nascer no chão medido, as
+	-- casas não: com o chão nivelado em y = 1 e relevo de neve chegando a 3,3,
+	-- TODAS as 32 casas do mapa estavam enterradas entre 1 e 2,7 studs (medido).
+	-- Isso some com o embasamento de pedra e com o soco — sobra o reboco
+	-- aparentemente pousado na neve, que é a leitura de "casa voando" — e faz a
+	-- superfície do terreno brigar com a face da parede (o z-fighting que pisca
+	-- e parece textura bugada).
+	--
+	-- Duas coisas resolvem: aplainar a pegada da casa (uma casa tem fundação, não
+	-- acompanha duna) e fundar na cota do chão nivelado, 0,5 abaixo pro soco
+	-- encostar na terra em vez de flutuar sobre ela.
+	Build.paintGround(pos.X, pos.Z, math.max(w, d) + 1.5, Enum.Material.Cobblestone)
+	pos = Vector3.new(pos.X, Build.GROUND_LEVEL - 0.5, pos.Z)
 	local base = CFrame.new(pos) * CFrame.Angles(0, ang, 0)
 	local GF = 6.0 -- pé-direito do térreo (pedra)
 	local UF = 5.4 -- pé-direito dos andares de cima
@@ -79,13 +101,16 @@ local function house(pos: Vector3, w: number, d: number, floors: number, ang: nu
 			Vector3.new(-w / 2 - 0.6, 0, -d / 2 - 0.6),
 		}
 	do
-		Build.drift((base * o) + Vector3.new(0, 0.35, 0), 1.3, 2.3)
+		-- Acúmulo estreito e alongado: evita as bolas brancas que cobriam
+		-- telhado/chaminé e preserva a leitura de neve pesada do norte.
+		Build.drift((base * o) + Vector3.new(0, 0.35, 0), 0.72, 1.45)
 	end
 	-- e limpa a soleira, caso a neve espalhada da cidade tenha caído ali
 	-- 1,6 e não 2,4: a d/2 + 2,4 a soleira descolava da fachada e virava uma
 	-- laje de pedra solta na neve, sem casa em cima dela.
 	local doorAt = base * Vector3.new(0, 0, d / 2 + 1.6)
 	table.insert(doorsteps, doorAt)
+	table.insert(pegadas, { pos = pos, w = w, d = d, ang = ang })
 	Build.paintGround(doorAt.X, doorAt.Z, 9, Enum.Material.Cobblestone)
 
 	-- cornija separando pedra e reboco (quebra a leitura de "bloco único")
@@ -214,7 +239,13 @@ local function house(pos: Vector3, w: number, d: number, floors: number, ang: nu
 					0.42 + (courses - ci) * 0.055,
 					0
 				),
-				Color = roofCol:Lerp(Color3.fromRGB(20, 16, 14), 0.05 + (ci % 2) * 0.06),
+				-- Alternar CLARO/ESCURO em torno da cor base, em vez de escurecer
+				-- sempre em direção ao preto: assim a fiada aparece como relevo e
+				-- não como sujeira acumulando até o telhado sumir.
+				-- diferença SUTIL: a 0,1/0,12 a alternância virava faixa clara
+				-- atravessando o telhado em vez de leitura de fiada
+				Color = (ci % 2 == 0) and roofCol:Lerp(Color3.fromRGB(226, 216, 202), 0.045)
+					or roofCol:Lerp(Color3.fromRGB(28, 24, 20), 0.06),
 				Material = roofTile and Enum.Material.Slate or Enum.Material.WoodPlanks,
 				CanCollide = false,
 				CastShadow = false,
@@ -296,12 +327,15 @@ local function house(pos: Vector3, w: number, d: number, floors: number, ang: nu
 		CFrame = base * CFrame.new(0, 2.5, dz + 0.1),
 		Color = Color3.fromRGB(24, 20, 18),
 		Material = Enum.Material.Wood,
+		CanCollide = false,
 	})
 	Build.part({ -- porta
 		Size = Vector3.new(3, 4.6, 0.35),
 		CFrame = base * CFrame.new(0, 2.3, dz + 0.3),
 		Color = C.WOOD_DARK,
 		Material = Enum.Material.WoodPlanks,
+		Name = "Door",
+		CanCollide = false,
 	})
 	for _, sx in { -1.7, 1.7 } do -- batentes
 		Build.part({
@@ -364,14 +398,14 @@ local function house(pos: Vector3, w: number, d: number, floors: number, ang: nu
 	-- silhueta de um bairro medieval visto de longe.
 	if floors >= 2 and math.random() < 0.5 then
 		local side = (math.random() < 0.5) and 1 or -1
-		local dz = (math.random() - 0.5) * dd * 0.4
+		local jitZ = (math.random() - 0.5) * dd * 0.4
 		local dw, dh, ddp = 3.6, 3.4, 3.2
 		local dx = side * (ww / 4)
 		local dy = topY + rh * 0.42
 
 		Build.part({ -- corpo da mansarda
 			Size = Vector3.new(dw, dh, ddp),
-			CFrame = base * CFrame.new(dx, dy, dz),
+			CFrame = base * CFrame.new(dx, dy, jitZ),
 			Color = plasterCol,
 			Material = Enum.Material.Plaster,
 		})
@@ -384,7 +418,7 @@ local function house(pos: Vector3, w: number, d: number, floors: number, ang: nu
 			Build.part({
 				Size = Vector3.new(mslope, 0.4, ddp + 1),
 				CFrame = base
-					* CFrame.new(dx + s2 * (mrw / 4), dy + dh / 2 + mrh / 2, dz)
+					* CFrame.new(dx + s2 * (mrw / 4), dy + dh / 2 + mrh / 2, jitZ)
 					* CFrame.Angles(0, 0, -s2 * mpitch),
 				Color = roofCol,
 				Material = roofTile and Enum.Material.Slate or Enum.Material.WoodPlanks,
@@ -392,7 +426,7 @@ local function house(pos: Vector3, w: number, d: number, floors: number, ang: nu
 			})
 		end
 		Build.window(
-			base * CFrame.new(dx + side * (ddp / 2 + 0.15), dy, dz)
+			base * CFrame.new(dx + side * (ddp / 2 + 0.15), dy, jitZ)
 				* CFrame.Angles(0, math.rad(side * 90), 0),
 			1.4,
 			1.6,
@@ -598,6 +632,26 @@ local MARKET_R = 52
 -- própria praça, então 62 basta (praça 52 + folga).
 local MARKET_KEEPOUT = 62
 
+-- FERRARIAS. Ficam registradas aqui porque precisam de área livre de casas e
+-- porque são construídas ANTES do bairro — se nascerem depois, uma casa já está
+-- no lugar e as duas se atravessam.
+local FORGES = {
+	{ pos = Vector3.new(-58, 0, -44), rot = 118 },
+	{ pos = Vector3.new(64, 0, -122), rot = -66 },
+}
+local FORGE_CLEAR = 24
+
+-- CASAS EM QUE SE ENTRA.
+-- São poucas de propósito: a maioria do bairro continua sendo a malha do kit,
+-- que é mais bonita de fora e muito mais barata. Estas três existem pra o
+-- jogador ter onde entrar sem precisar ir até a taverna, e ficam espalhadas —
+-- uma por bairro — em vez de enfileiradas.
+local HABITADAS = {
+	{ pos = Vector3.new(86, 0, -58), rot = 186, quente = true },
+	{ pos = Vector3.new(-102, 0, -16), rot = 8, quente = true },
+	{ pos = Vector3.new(72, 0, 12), rot = 172, quente = false },
+}
+
 local function canPlace(x: number, z: number, w: number, d: number): boolean
 	local reach = math.max(w, d) / 2 + 3
 	if math.sqrt(x * x + z * z) + reach > INNER_LIMIT then
@@ -610,6 +664,97 @@ local function canPlace(x: number, z: number, w: number, d: number): boolean
 	if math.abs(x) < Town.MAIN_ROAD_W / 2 + reach then
 		return false -- em cima da via principal
 	end
+	for _, f in FORGES do
+		local fx, fz = x - f.pos.X, z - f.pos.Z
+		if math.sqrt(fx * fx + fz * fz) < FORGE_CLEAR + reach then
+			return false -- em cima da ferraria
+		end
+	end
+	-- O banco fica FORA do anel da praça. Em vez de inflar o raio de exclusão da
+	-- praça inteira por causa dele (o que já apagou as casas da cidade uma vez),
+	-- ele tem a própria área livre, do tamanho dele.
+	local bc = Market.bankCenter(MARKET_C, MARKET_R)
+	local bx, bz = x - bc.X, z - bc.Z
+	if math.sqrt(bx * bx + bz * bz) < Market.BANK_CLEAR + reach then
+		return false
+	end
+	-- a taverna tem lote próprio: ela é construída peça a peça pra ter vão de
+	-- porta, então não pode dividir espaço com casa nenhuma
+	local tx, tz = x - Tavern.POS.X, z - Tavern.POS.Z
+	if math.sqrt(tx * tx + tz * tz) < Tavern.CLEAR + reach then
+		return false
+	end
+	-- idem pras casas em que se entra
+	for _, h in HABITADAS do
+		local hx, hz = x - h.pos.X, z - h.pos.Z
+		if math.sqrt(hx * hx + hz * hz) < Tavern.CASA_CLEAR + reach then
+			return false
+		end
+	end
+	return true
+end
+
+-- CASA DO KIT.
+-- Monta a construção combinando peças de asset em vez de empilhar primitivas:
+-- corpo (paredes + telhado + mansarda + chaminé) e, em parte delas, o alpendre
+-- coberto com a fornalha e a lenha do lado de fora. Duas casas iguais em
+-- sequência denunciam geração automática, então o que varia é a COMBINAÇÃO de
+-- peças e a escala, não só um número aleatório de andares.
+--
+-- Toda a infraestrutura em volta continua a mesma: aplaina a pegada, funda na
+-- cota certa, acumula neve nos cantos, limpa a soleira e registra a pegada pros
+-- props de rua. Só a geometria mudou.
+-- A malha "Main House" tem saliências (telhado e chaminé) que chegam a
+-- ~31x28 studs depois da escala. Os antigos 19x22 eram só o tamanho do
+-- alicerce imaginado e deixavam as casas se cruzarem visualmente.
+local KIT_W, KIT_D = 32, 29
+
+local function kitHouse(cx: number, z: number, ang: number): boolean
+	Build.paintGround(cx, z, math.max(KIT_W, KIT_D) + 1.5, Enum.Material.Cobblestone)
+	local pos = Vector3.new(cx, Build.GROUND_LEVEL - 0.4, z)
+	local escala = 0.88 + math.random() * 0.3
+	local corpo = Assets.spawn("CASA_CORPO", pos, math.deg(ang), escala, true)
+	if not corpo then
+		return false
+	end
+	-- O pivô fornecido pelo asset fica deslocado do volume visível. Centralizar
+	-- a caixa real no lote faz a checagem de ocupação, a porta e o alpendre
+	-- apontarem para a construção que o jogador realmente enxerga.
+	local bodyCF = corpo:GetBoundingBox()
+	corpo:PivotTo(corpo:GetPivot() + Vector3.new(cx - bodyCF.Position.X, 0, z - bodyCF.Position.Z))
+
+	local base = CFrame.new(Vector3.new(cx, 0, z)) * CFrame.Angles(0, ang, 0)
+
+	-- alpendre em parte das casas, encostado numa das laterais
+	if math.random() < 0.45 then
+		local sx = (math.random() < 0.5) and 1 or -1
+		local at = base * Vector3.new(sx * (KIT_W * 0.5 + 5), 0, -KIT_D * 0.12)
+		Assets.spawn(
+			"CASA_ALPENDRE",
+			Vector3.new(at.X, Build.GROUND_LEVEL - 0.4, at.Z),
+			math.deg(ang) + (sx > 0 and 90 or -90),
+			escala,
+			true
+		)
+	end
+
+	-- neve nos cantos e nos fundos; nunca na soleira, que é o que se pisa
+	for _, o in
+		{
+			Vector3.new(KIT_W / 2 + 1.0, 0, KIT_D * 0.18),
+			Vector3.new(-KIT_W / 2 - 1.0, 0, -KIT_D * 0.22),
+			Vector3.new(KIT_W / 2 + 0.7, 0, -KIT_D / 2 - 0.7),
+			Vector3.new(-KIT_W / 2 - 0.7, 0, -KIT_D / 2 - 0.7),
+		}
+	do
+		-- Acúmulo estreito e alongado para não formar bolas sobre o telhado.
+		Build.drift((base * o) + Vector3.new(0, 0.35, 0), 0.72, 1.45)
+	end
+
+	local doorAt = base * Vector3.new(0, 0, KIT_D / 2 + 1.6)
+	table.insert(doorsteps, doorAt)
+	table.insert(pegadas, { pos = Vector3.new(cx, 0, z), w = KIT_W, d = KIT_D, ang = ang })
+	Build.paintGround(doorAt.X, doorAt.Z, 9, Enum.Material.Cobblestone)
 	return true
 end
 
@@ -617,20 +762,17 @@ end
 local function houseRow(z: number, xFrom: number, xTo: number, facing: number, tileChance: number)
 	local x = xFrom
 	while x < xTo - 10 do
-		local w = 11 + math.random() * 7
-		local d = 10 + math.random() * 4
-		local cx = x + w / 2
-		if canPlace(cx, z, w, d) then
-			local floors = (math.random() < 0.6) and 2 or ((math.random() < 0.25) and 3 or 1)
-			house(
-				Vector3.new(cx, 0, z),
-				w,
-				d,
-				floors,
-				facing + math.rad(math.random(-3, 3)),
-				math.random() < tileChance
-			)
-			x += w + 1.5 + math.random() * 2.5 -- coladas: cidade densa
+		local cx = x + KIT_W / 2
+		if canPlace(cx, z, KIT_W, KIT_D) then
+			local ang = facing + math.rad(math.random(-3, 3))
+			if not kitHouse(cx, z, ang) then
+				-- asset fora do ar: mantém a cidade de pé com a casa procedural
+				local w = 11 + math.random() * 7
+				local d = 10 + math.random() * 4
+				local floors = (math.random() < 0.6) and 2 or 1
+				house(Vector3.new(cx, 0, z), w, d, floors, ang, math.random() < tileChance)
+			end
+			x += KIT_W + 2.5 + math.random() * 3.5
 		else
 			x += 6
 		end
@@ -639,7 +781,58 @@ end
 
 -- ================================================================= MERCADO
 local function buildKeep()
-	local c = Vector3.new(0, 0, Town.KEEP_Z)
+	-- mesma correção de fundação das casas: y = 0 enterrava a base inteira
+	local c = Vector3.new(0, Build.GROUND_LEVEL - 0.5, Town.KEEP_Z)
+
+	-- SALÃO DO JARL. O corpo é uma malha (paredes de tora, telhado de tabuinha
+	-- em camadas, alicerce de pedra) guardada em ServerStorage._Construcoes. A
+	-- plataforma, a escadaria e os braseiros continuam sendo construídos aqui,
+	-- porque é o que amarra o salão ao resto da praça.
+	--
+	-- Já foi desligado uma vez por "escala e linguagem visual incompatíveis".
+	-- O problema real era de ASSENTAMENTO: posicionava pelo pivô, numa altura
+	-- chutada (GROUND_LEVEL + 8,2), e o pivô do molde não é a base. Agora mede
+	-- o bounding box depois de escalar e encosta a base no piso da plataforma —
+	-- a mesma conta que consertou a ferraria.
+	local moldes = game:GetService("ServerStorage"):FindFirstChild("_Construcoes")
+	local salao = moldes and moldes:FindFirstChild("salao")
+	local hasSallonMesh = false
+	if salao and salao:IsA("Model") then
+		Build.paintGround(c.X, Town.KEEP_Z + 4, 56, Enum.Material.Cobblestone)
+		local copia = (salao :: Model):Clone()
+		pcall(function()
+			copia:ScaleTo(1.9)
+		end)
+		copia.Parent = Build.getRoot()
+		-- topo da plataforma de pedra do salão (96 x 9 centrada em y = 4,5)
+		local pisoY = Build.GROUND_LEVEL + 9
+		copia:PivotTo(CFrame.new(c.X, 0, Town.KEEP_Z + 12))
+		local bbCF, bbSize = copia:GetBoundingBox()
+		-- centra no XZ pelo volume visível e encosta a base no piso
+		copia:PivotTo(
+			copia:GetPivot()
+				+ Vector3.new(
+					c.X - bbCF.Position.X,
+					pisoY - (bbCF.Position.Y - bbSize.Y / 2),
+					(Town.KEEP_Z + 12) - bbCF.Position.Z
+				)
+		)
+		local fimCF, fimSize = copia:GetBoundingBox()
+		local fimBase = fimCF.Position.Y - fimSize.Y / 2
+		if math.abs(fimBase - pisoY) > 0.01 then
+			copia:PivotTo(copia:GetPivot() + Vector3.new(0, pisoY - fimBase, 0))
+		end
+		for _, d in copia:GetDescendants() do
+			if d:IsA("BasePart") then
+				d.Anchored = true
+				-- só o volume grande colide; detalhe de telhado não precisa
+				local maior = math.max(d.Size.X, d.Size.Y, d.Size.Z)
+				d.CanCollide = maior >= 3
+				d.CastShadow = maior >= 4
+			end
+		end
+		hasSallonMesh = true
+	end
 
 	Build.part({
 		Size = Vector3.new(96, 9, 64),
@@ -650,21 +843,20 @@ local function buildKeep()
 	for i = 0, 8 do
 		Build.part({
 			Size = Vector3.new(28, 1.15, 2.8),
-			CFrame = CFrame.new(c + Vector3.new(0, 0.6 + i * 1.02, -14 - i * 2.6)),
+			-- Base na praça (z=35), topo encostando na plataforma (z=56).
+			-- Antes a sequência era invertida e subia PARA LONGE do Salão.
+			CFrame = CFrame.new(c + Vector3.new(0, 0.6 + i * 1.02, -35 + i * 2.6)),
 			Color = C.STONE_LIGHT,
 			Material = Enum.Material.Cobblestone,
 		})
 	end
-	-- muretas da escadaria
-	for _, sx in { -1, 1 } do
-		Build.part({
-			Size = Vector3.new(2.5, 6, 26),
-			CFrame = CFrame.new(c + Vector3.new(sx * 15, 3, -25)) * CFrame.Angles(math.rad(-11), 0, 0),
-			Color = C.STONE_DARK,
-			Material = Enum.Material.Cobblestone,
-		})
-	end
+	-- Sem mureta ou corrimão provisório: a leitura deve ser de uma escadaria
+	-- larga e limpa até o Hall, sem peças cruzando a passagem.
 
+	if not hasSallonMesh then
+	-- fallback procedural: só constrói quando o asset do salão não existe.
+	-- Antes os dois eram construídos ao mesmo tempo, sobrepondo paredes,
+	-- telhados e colisores e deixando o interior impossível de atravessar.
 	-- corpo do salão + telhado A (mesma técnica das casas)
 	local w, d, h = 48, 32, 22
 	local y0 = 9
@@ -755,15 +947,12 @@ local function buildKeep()
 	for _, sx in { -20, 20 } do
 		local p = c + Vector3.new(sx, y0, -6)
 		Build.post(p, 4, 1.4, C.STONE_DARK, Enum.Material.Cobblestone)
-		local f = Build.part({
-			Size = Vector3.new(2.6, 1.8, 2.6),
-			CFrame = CFrame.new(p + Vector3.new(0, 4.4, 0)),
-			Color = C.FIRE,
-			Material = Enum.Material.Neon,
-			CanCollide = false,
-			CastShadow = false,
-		})
-		Build.light(f, C.FIRE, 2.4, 45)
+		-- Era um CUBO de Neon 2,6x1,8 com luz de brilho 2,4 e alcance 45: lia como
+		-- um retângulo amarelo chapado flutuando sobre o poste, e a poça de luz
+		-- estourava a plataforma inteira. Mesmo defeito já corrigido nas lanternas
+		-- e nos braseiros da praça — este ficou de fora.
+		Build.fire(p + Vector3.new(0, 4.4, 0), 1.2, 24)
+	end
 	end
 end
 
@@ -785,30 +974,70 @@ local function buildDistricts()
 	houseRow(26, -104, -30, math.pi, 0.2)
 	houseRow(26, 30, 104, math.pi, 0.2)
 
-	-- props de rua: mais variedade = rua que parece usada, não decorada
-	for _ = 1, 140 do
-		local x = math.random(-140, 140)
-		local z = math.random(Town.GATE_Z + 18, 48)
-		if math.abs(x) > Town.MAIN_ROAD_W / 2 + 3 and math.sqrt(x * x + z * z) < 165 then
-			local p = Vector3.new(x, 0, z)
+	-- PROPS DE RUA.
+	--
+	-- O QUE ESTAVA ERRADO. Eram 140 objetos sorteados em (x, z) puramente
+	-- aleatório dentro do raio da cidade, com uma única regra: não cair na rua
+	-- principal. Nada os prendia a coisa nenhuma — por isso apareciam barris,
+	-- caixas e cercas isolados no meio da neve, sem parede, sem porta e sem
+	-- motivo. Objeto largado no vazio não lê como cidade usada, lê como erro.
+	--
+	-- Agora cada prop escolhe uma CASA e encosta numa das faces dela (lateral ou
+	-- fundo, nunca a soleira, que é por onde se entra). É a regra real: coisa
+	-- guardada fica rente à parede, debaixo do beiral, fora do caminho.
+	local function juntoDeUmaParede(): Vector3?
+		if #pegadas == 0 then
+			return nil
+		end
+		local f = pegadas[math.random(#pegadas)]
+		local lado = math.random(3) -- 1 = +X, 2 = -X, 3 = fundo (-Z)
+		local lx, lz
+		if lado == 3 then
+			lx = (math.random() - 0.5) * f.w * 0.7
+			lz = -f.d / 2 - (1.6 + math.random() * 1.4)
+		else
+			local sx = (lado == 1) and 1 or -1
+			lx = sx * (f.w / 2 + 1.6 + math.random() * 1.4)
+			lz = (math.random() - 0.5) * f.d * 0.7
+		end
+		local at = (CFrame.new(f.pos) * CFrame.Angles(0, f.ang, 0)) * Vector3.new(lx, 0, lz)
+		-- fora da rua principal e dentro da cidade
+		if math.abs(at.X) < Town.MAIN_ROAD_W / 2 + 2 then
+			return nil
+		end
+		if math.sqrt(at.X * at.X + at.Z * at.Z) > 165 then
+			return nil
+		end
+		return Vector3.new(at.X, Build.groundY(at.X, at.Z, 1), at.Z)
+	end
+
+	for _ = 1, 120 do
+		local p = juntoDeUmaParede()
+		if p then
+			local x, z = p.X, p.Z
 			local r = math.random()
 			if r < 0.3 then
-				Build.barrel(p)
+				-- mesh do catálogo; o barril de primitivas fica de plano B
+				if not Assets.spawn("BARREL", p, math.random(0, 359), 0.8 + math.random() * 0.35, true) then
+					Build.barrel(p)
+				end
 			elseif r < 0.55 then
 				Build.crate(p, 1.8 + math.random() * 1.6)
 			elseif r < 0.7 then
-				-- pilha de lenha
-				for i = 0, 2 do
-					Build.cyl(
-						CFrame.new(x, 0.6 + i * 1.1, z) * CFrame.Angles(0, math.random() * 3, math.rad(90)),
-						3.5,
-						1,
-						C.WOOD_DARK,
-						Enum.Material.Wood
-					)
+				-- pilha de lenha do kit; as toras de primitiva ficam de plano B
+				if not Assets.spawn("LENHA", p, math.random(0, 359), 1, true) then
+					for i = 0, 2 do
+						Build.cyl(
+							CFrame.new(x, p.Y + 0.6 + i * 1.1, z) * CFrame.Angles(0, math.random() * 3, math.rad(90)),
+							3.5,
+							1,
+							C.WOOD_DARK,
+							Enum.Material.Wood
+						)
+					end
 				end
 			elseif r < 0.82 then
-				-- cerca de madeira
+				-- cerca de madeira, acompanhando a parede
 				local ang2 = math.random() * math.pi
 				for i = 0, 3 do
 					local fp = p + Vector3.new(math.cos(ang2) * i * 3, 0, math.sin(ang2) * i * 3)
@@ -830,9 +1059,9 @@ local function buildDistricts()
 					Color = C.WOOD,
 					Material = Enum.Material.WoodPlanks,
 				})
-				for _, s in { -1.6, 1.6 } do
+				for _, sw in { -1.6, 1.6 } do
 					Build.cyl(
-						CFrame.new(p + Vector3.new(s, 1.4, 0)),
+						CFrame.new(p + Vector3.new(sw, 1.4, 0)),
 						0.4,
 						2.8,
 						C.WOOD_DARK,
@@ -840,14 +1069,23 @@ local function buildDistricts()
 					)
 				end
 			else
-				-- monte de feno
-				Build.part({
-					Shape = Enum.PartType.Ball,
-					Size = Vector3.new(5, 3.4, 5),
-					CFrame = CFrame.new(p + Vector3.new(0, 1.5, 0)),
-					Color = C.THATCH,
-					Material = Enum.Material.Grass,
-				})
+				-- cepo de rachar lenha, banco, ou monte de feno
+				local q = math.random()
+				local posto = false
+				if q < 0.4 then
+					posto = Assets.spawn("CEPO", p, math.random(0, 359), 1.2, true) ~= nil
+				elseif q < 0.7 then
+					posto = Assets.spawn("BANCO", p, math.random(0, 359), 1.2, true) ~= nil
+				end
+				if not posto then
+					Build.part({
+						Shape = Enum.PartType.Ball,
+						Size = Vector3.new(5, 3.4, 5),
+						CFrame = CFrame.new(p + Vector3.new(0, 1.5, 0)),
+						Color = C.THATCH,
+						Material = Enum.Material.Grass,
+					})
+				end
 			end
 		end
 	end
@@ -868,12 +1106,23 @@ local function buildDistricts()
 end
 
 function Town.build()
+	-- buildWorld/Bake podem chamar Town.build mais de uma vez no mesmo processo.
+	-- Não deixar lotes e soleiras de uma geração anterior contaminarem a próxima.
+	table.clear(doorsteps)
+	table.clear(pegadas)
 	-- ORDEM IMPORTA. Tudo que PINTA chão batido (ruas, praça, braseiros) tem que
 	-- rodar antes de tudo que ESPALHA neve, porque a neve só se deposita onde o
 	-- chão ainda é neve. Na ordem errada a praça nasceria por cima de montes já
 	-- formados e ficaria ondulada — a terra tem que ficar plana.
 	buildStreets()
 	Market.build(MARKET_C, MARKET_R)
+	for _, f in FORGES do
+		Forge.build(f.pos, f.rot)
+	end
+	Tavern.build()
+	for _, h in HABITADAS do
+		Tavern.buildCasa(h.pos, h.rot, h.quente)
+	end
 	buildDistricts()
 	buildKeep()
 

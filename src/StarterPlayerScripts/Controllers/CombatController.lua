@@ -41,7 +41,8 @@ local function notify(text: string, color: Color3?)
 	label.Text = text
 	label.Parent = toastGui
 	Instance.new("UICorner", label).CornerRadius = UDim.new(0, 6)
-	local stroke = Instance.new("UIStroke", label)
+	local stroke = Instance.new("UIStroke")
+	stroke.Parent = label
 	stroke.Color = color or Color3.fromRGB(47, 212, 194)
 	stroke.Thickness = 1.5
 
@@ -69,6 +70,7 @@ local function damageNumber(position: Vector3, amount: number, crit: boolean)
 	local bb = Instance.new("BillboardGui")
 	bb.Size = UDim2.fromScale(crit and 5 or 3.5, crit and 2 or 1.5)
 	bb.AlwaysOnTop = true
+	bb.MaxDistance = 120 -- dano de luta alheia do outro lado do mapa é ruído
 	bb.Parent = part
 
 	local label = Instance.new("TextLabel")
@@ -168,57 +170,6 @@ local function formAura(color: Color3)
 	Debris:AddItem(hl, 8)
 end
 
--- ---------- escudo de defesa (enquanto segura o bloqueio) ----------
-local shield: Part? = nil
-
-function CombatController.setBlocking(on: boolean)
-	if on then
-		if shield then
-			return
-		end
-		local _, hrp = localChar()
-		if not hrp then
-			return
-		end
-		local p = Instance.new("Part")
-		p.Name = "GuardShield"
-		p.Anchored = true
-		p.CanCollide = false
-		p.CastShadow = false
-		p.Shape = Enum.PartType.Ball
-		p.Size = Vector3.new(6.5, 6.5, 3)
-		p.Material = Enum.Material.ForceField
-		p.Color = Color3.fromRGB(120, 200, 255)
-		p.Transparency = 0.35
-		p.CFrame = hrp.CFrame * CFrame.new(0, 0, -2)
-		p.Parent = Workspace
-		shield = p
-	else
-		if shield then
-			local s = shield
-			shield = nil
-			TweenService:Create(s, TweenInfo.new(0.15), { Transparency = 1 }):Play()
-			Debris:AddItem(s, 0.2)
-		end
-	end
-end
-
--- flash no escudo (parry) / quebra
-local function shieldFlash(color: Color3)
-	if not shield then
-		return
-	end
-	local s = shield
-	s.Color = color
-	s.Transparency = 0
-	TweenService:Create(s, TweenInfo.new(0.25), { Transparency = 0.35 }):Play()
-	task.delay(0.3, function()
-		if s and s.Parent then
-			s.Color = Color3.fromRGB(120, 200, 255)
-		end
-	end)
-end
-
 -- M1: arco de golpe à frente do jogador
 local function meleeSlash()
 	local _, hrp = localChar()
@@ -276,29 +227,8 @@ function CombatController.Start()
 				formAura(color)
 				shakeAmount = math.max(shakeAmount, 0.3)
 			end
-		elseif data.kind == "parry" then
-			if data.position then
-				burst(data.position, Color3.fromRGB(255, 240, 150))
-			end
-			shieldFlash(Color3.fromRGB(255, 230, 120))
-			notify("PARRY!", Color3.fromRGB(255, 240, 150))
-			shakeAmount = math.max(shakeAmount, 0.45)
-		elseif data.kind == "blocked" then
-			if data.position then
-				burst(data.position, Color3.fromRGB(150, 170, 190))
-			end
-			shieldFlash(Color3.fromRGB(200, 220, 255))
-			shakeAmount = math.max(shakeAmount, 0.15)
 		elseif data.kind == "dodged" then
 			shakeAmount = math.max(shakeAmount, 0.08)
-		elseif data.kind == "guardBreak" then
-			shieldFlash(Color3.fromRGB(255, 60, 60))
-			CombatController.setBlocking(false) -- escudo estilhaça
-			if data.position then
-				burst(data.position, Color3.fromRGB(255, 60, 60))
-			end
-			notify("GUARDA QUEBRADA!", Color3.fromRGB(220, 60, 60))
-			shakeAmount = math.max(shakeAmount, 0.7)
 		elseif data.kind == "postureBreak" then
 			if data.position then
 				burst(data.position, Color3.fromRGB(255, 180, 60))
@@ -319,17 +249,8 @@ function CombatController.Start()
 		end
 	end)
 
-	-- escudo acompanha o personagem + shake da câmera
+	-- shake da câmera
 	RunService.RenderStepped:Connect(function(dt)
-		if shield then
-			local _, hrp = localChar()
-			if hrp then
-				shield.CFrame = hrp.CFrame * CFrame.new(0, 0, -2)
-			else
-				CombatController.setBlocking(false)
-			end
-		end
-
 		if shakeAmount <= 0.001 then
 			return
 		end

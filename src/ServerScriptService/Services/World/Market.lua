@@ -14,10 +14,28 @@
 --     brasa o dia inteiro. A neve sobra só na borda da praça.
 --   · varal de luzes ligando os postes: amarra a praça como um espaço só.
 
+local Assets = require(script.Parent.Assets)
 local Build = require(script.Parent.Build)
 local C = Build.C
 
 local Market = {}
+
+-- POSIÇÃO DO BANCO, exportada porque o Town precisa dela pra não encostar casa
+-- nele. Fica FORA do anel de barracas, num ângulo que mantém o corredor da rua
+-- principal (x≈0) livre — na borda da praça ele acabava a 2,7 studs do ponto de
+-- spawn, e o jogador nascia colado numa parede.
+Market.BANK_ANGLE = math.rad(150)
+Market.BANK_EXTRA = 24 -- quanto além do raio da praça
+Market.BANK_CLEAR = 26 -- raio livre de casas em volta dele
+
+function Market.bankCenter(center: Vector3, radius: number): Vector3
+	local d = radius + Market.BANK_EXTRA
+	return Vector3.new(
+		center.X + math.cos(Market.BANK_ANGLE) * d,
+		center.Y,
+		center.Z + math.sin(Market.BANK_ANGLE) * d
+	)
+end
 
 export type Vendor = {
 	id: string,
@@ -139,16 +157,32 @@ local function vendorNPC(cf: CFrame, v: Vendor): Model
 	model.PrimaryPart = torso
 
 	-- placa com nome e ofício, pra achar o vendedor certo de longe
+	-- PLACA DO VENDEDOR.
+	-- MaxDistance era 90: com sete vendedores em volta de uma praça de raio 52,
+	-- de qualquer ponto dela apareciam cinco ou seis placas ao mesmo tempo,
+	-- empilhadas umas por cima das outras e cortadas pela borda da tela — viravam
+	-- fragmentos ilegíveis tipo "#ANOS" e "Grossa". 38 studs é mais ou menos o
+	-- alcance em que você ainda vai falar com o sujeito: lê uma de cada vez.
 	local tag = Instance.new("BillboardGui")
 	tag.Name = "Placa"
-	tag.Size = UDim2.new(0, 210, 0, 42)
+	tag.Size = UDim2.new(0, 190, 0, 40)
 	tag.StudsOffsetWorldSpace = Vector3.new(0, 3.4, 0)
 	tag.AlwaysOnTop = false
-	tag.MaxDistance = 90
+	tag.MaxDistance = 38
 	tag.Parent = torso
 
+	-- fundo escuro: texto claro sobre neve branca não tem contraste nenhum
+	local fundo = Instance.new("Frame")
+	fundo.Size = UDim2.fromScale(1, 1)
+	fundo.BackgroundColor3 = Color3.fromRGB(14, 16, 19)
+	fundo.BackgroundTransparency = 0.35
+	fundo.BorderSizePixel = 0
+	fundo.Parent = tag
+	Instance.new("UICorner", fundo).CornerRadius = UDim.new(0, 6)
+
 	local role = Instance.new("TextLabel")
-	role.Size = UDim2.new(1, 0, 0.44, 0)
+	role.Size = UDim2.new(1, -8, 0.42, 0)
+	role.Position = UDim2.new(0, 4, 0, 1)
 	role.BackgroundTransparency = 1
 	role.Font = Enum.Font.Code
 	role.Text = v.papel
@@ -157,8 +191,8 @@ local function vendorNPC(cf: CFrame, v: Vendor): Model
 	role.Parent = tag
 
 	local name = Instance.new("TextLabel")
-	name.Size = UDim2.new(1, 0, 0.56, 0)
-	name.Position = UDim2.new(0, 0, 0.44, 0)
+	name.Size = UDim2.new(1, -8, 0.52, 0)
+	name.Position = UDim2.new(0, 4, 0.44, 0)
 	name.BackgroundTransparency = 1
 	name.Font = Enum.Font.GothamMedium
 	name.Text = v.nome
@@ -226,7 +260,38 @@ local function stripedAwning(ridge: CFrame, width: number, slopeLen: number, a: 
 	})
 end
 
-local function stall(cf: CFrame, v: Vendor)
+-- BARRACA DE ASSET.
+-- Tres modelos diferentes revezando: praca com seis barracas identicas le como
+-- copiar-e-colar. Ja foram desligadas uma vez por "painel gigante / geometria
+-- caida" -- mas a causa era posicionar pelo PIVO do asset, que nao coincide com
+-- o volume visivel. Assets.spawn agora centra pelo bounding box, entao a
+-- barraca assenta onde foi pedida. Se o kit nao carregar, cai na barraca de
+-- primitivas logo abaixo.
+local BARRACAS = { "BARRACA_A", "BARRACA_B", "BARRACA_C" }
+
+local function stallAsset(cf: CFrame, i: number): boolean
+	local nome = BARRACAS[((i - 1) % #BARRACAS) + 1]
+	local m = Assets.spawn(nome, cf.Position, math.deg(select(2, cf:ToOrientation())), 1, true)
+	if not m then
+		return false
+	end
+	-- caixotes encostados na lateral: mercadoria esperando a vez
+	for _, sx in { -1, 1 } do
+		if math.random() < 0.55 then
+			local at = cf * CFrame.new(sx * 8.5, 0, (math.random() - 0.5) * 4)
+			Assets.spawn(
+				(math.random() < 0.5) and "CAIXOTE" or "ENGRADADO",
+				Vector3.new(at.X, Build.groundY(at.X, at.Z, 1), at.Z),
+				math.random(0, 359),
+				1,
+				true
+			)
+		end
+	end
+	return true
+end
+
+local function stallPrimitivas(cf: CFrame, v: Vendor)
 	local W, D = 16, 11
 	-- Postes mais altos e cumeeira mais alta. Antes o beiral do toldo caía a 4
 	-- studs do chão — ABAIXO da cabeça do vendedor —, então de frente só se via
@@ -326,7 +391,6 @@ local function stall(cf: CFrame, v: Vendor)
 	Build.crate((cf * CFrame.new(W / 2 + 1.5, 0, D / 5)).Position, 2.1)
 
 	-- o vendedor fica ATRÁS do balcão, virado pra fora
-	vendorNPC(cf * CFrame.new(0, 0, D / 2 - 4.4), v)
 end
 
 -- =================================================================== BRASEIRO
@@ -425,6 +489,8 @@ local function bank(cf: CFrame)
 			CFrame = cf * CFrame.new(s * 1.6, 3.75, D / 2 + 0.1),
 			Color = C.WOOD_DARK,
 			Material = Enum.Material.WoodPlanks,
+			Name = "Door",
+			CanCollide = false,
 		})
 	end
 
@@ -476,10 +542,14 @@ local function lightLine(a: Vector3, b: Vector3)
 		if prev then
 			local mid = (prev + p) / 2
 			local d = p - prev
+			-- Corda cor de CORDA, não quase-preta. Com (38,34,30) a linha ficava
+			-- sem valor nenhum contra a neve e virava uma faixa preta dura
+			-- atravessando a praça — mais parecida com um risco na tela do que
+			-- com um varal. Um marrom claro devolve a leitura de fibra.
 			Build.part({
-				Size = Vector3.new(d.Magnitude + 0.1, 0.1, 0.1),
+				Size = Vector3.new(d.Magnitude + 0.1, 0.12, 0.12),
 				CFrame = CFrame.lookAt(mid, mid + d.Unit) * CFrame.Angles(0, math.rad(90), 0),
-				Color = Color3.fromRGB(38, 34, 30),
+				Color = Color3.fromRGB(118, 98, 74),
 				Material = Enum.Material.Fabric,
 				CanCollide = false,
 				CastShadow = false,
@@ -490,14 +560,17 @@ local function lightLine(a: Vector3, b: Vector3)
 				Shape = Enum.PartType.Ball,
 				Size = Vector3.new(0.55, 0.55, 0.55),
 				CFrame = CFrame.new(p - Vector3.new(0, 0.45, 0)),
-				Color = Color3.fromRGB(255, 206, 138),
+				-- âmbar controlado: a versão quase branca estourava contra a
+				-- neve e lia como esferas sem material, não como iluminação quente
+				-- de praça.
+				Color = Color3.fromRGB(255, 166, 78),
 				Material = Enum.Material.Neon,
-				Transparency = 0.2,
+				Transparency = 0.38,
 				CanCollide = false,
 				CastShadow = false,
 			})
 			if i % 3 == 0 then
-				Build.light(bulb, Color3.fromRGB(255, 196, 130), 0.3, 10)
+				Build.light(bulb, Color3.fromRGB(255, 158, 76), 0.18, 9)
 			end
 		end
 		prev = p
@@ -588,7 +661,16 @@ function Market.build(center: Vector3, radius: number)
 		local px, pz = center.X + math.cos(a) * ringR, center.Z + math.sin(a) * ringR
 		local p = Vector3.new(px, Build.groundY(px, pz, 2), pz)
 		-- a frente da barraca (+Z local) tem que olhar pro centro
-		stall(CFrame.lookAt(p, Vector3.new(center.X, p.Y, center.Z)), v)
+		local cfStall = CFrame.lookAt(p, Vector3.new(center.X, p.Y, center.Z))
+		if not stallAsset(cfStall, i) then
+			stallPrimitivas(cfStall, v)
+		end
+		-- O VENDEDOR E POSTO AQUI, não dentro da barraca.
+		-- Ele morava no fim da barraca de primitivas; quando a barraca virou
+		-- asset e o caminho antigo deixou de rodar, os seis vendedores da praça
+		-- sumiram junto — sobrou só o banqueiro, que é criado em outro lugar.
+		-- Separado assim, o NPC existe qualquer que seja a barraca.
+		vendorNPC(cfStall * CFrame.new(0, 0, -5.2), v)
 	end
 
 	for _, deg in LAMP_ANGLES do
@@ -610,12 +692,8 @@ function Market.build(center: Vector3, radius: number)
 	-- Antes isto derivava de `n`, que deixou de existir quando o anel virou
 	-- lista explícita de ângulos — e o erro derrubava a construção da CIDADE
 	-- INTEIRA, não só do banco.
-	local ba = math.rad(110)
-	-- Na BORDA da praça, não fora dela. Fora do anel o banco obrigava um raio de
-	-- exclusão de 84 studs, que apagava as casas da cidade inteira.
-	local bankR = radius * 0.88
-	local bx, bz = center.X + math.cos(ba) * bankR, center.Z + math.sin(ba) * bankR
-	local bp = Vector3.new(bx, Build.groundY(bx, bz, 2), bz)
+	local bc = Market.bankCenter(center, radius)
+	local bp = Vector3.new(bc.X, Build.groundY(bc.X, bc.Z, 2), bc.Z)
 	bank(CFrame.lookAt(bp, Vector3.new(center.X, bp.Y, center.Z)))
 end
 

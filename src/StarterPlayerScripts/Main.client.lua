@@ -10,6 +10,7 @@ local CameraController = require(Controllers.CameraController)
 local AnimController = require(Controllers.AnimController)
 local InventoryController = require(Controllers.InventoryController)
 local AuraController = require(Controllers.AuraController)
+local MountController = require(Controllers.MountController)
 
 CombatController.Start()
 HudController.Start()
@@ -17,6 +18,7 @@ CameraController.Start()
 AnimController.Start()
 InventoryController.Start()
 AuraController.Start()
+MountController.Start()
 InputController.Start({
 	CombatController = CombatController,
 	AnimController = AnimController,

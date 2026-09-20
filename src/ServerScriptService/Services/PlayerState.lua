@@ -15,13 +15,15 @@ export type State = {
 	iframeUntil: number,   -- os.clock() até quando está invulnerável
 	dashCdUntil: number,
 	attackCdUntil: number, -- ritmo entre golpes do combo
-	blocking: boolean,     -- segurando o bloqueio
-	blockStart: number,    -- os.clock() de quando começou a bloquear (janela de parry)
 	sprinting: boolean,    -- correndo AGORA (drena stamina enquanto se move)
 	sprintHeld: boolean,   -- Shift continua pressionado (intencao, nao estado)
-	posture: number,       -- guarda restante
-	postureHitAt: number,  -- última vez que a guarda levou dano
-	stunUntil: number,     -- atordoado (guarda quebrada): não pode agir
+	mounted: string?,      -- id da montaria, ou nil a pe
+	mountCdUntil: number,  -- trava anti-spam do montar/desmontar
+	-- Portão único de "não pode agir". A guarda quebrada era a fonte dele e foi
+	-- removida junto com o bloqueio; o campo fica porque é o gate genérico que
+	-- ataque, pesado, ultimate, poder, esquiva, corrida e montaria já consultam.
+	-- HOJE NADA O ESCREVE — é um hook, não um sistema ativo.
+	stunUntil: number,
 	heavyCdUntil: number,  -- cooldown do ataque pesado
 	ultCharge: number,     -- carga do ultimate
 	comboIndex: number,
@@ -46,12 +48,10 @@ function PlayerState.init(player: Player)
 		iframeUntil = 0,
 		dashCdUntil = 0,
 		attackCdUntil = 0,
-		blocking = false,
-		blockStart = 0,
 		sprinting = false,
 		sprintHeld = false,
-		posture = Constants.Posture.Max,
-		postureHitAt = 0,
+		mounted = nil,
+		mountCdUntil = 0,
 		stunUntil = 0,
 		heavyCdUntil = 0,
 		ultCharge = 0,
@@ -99,7 +99,7 @@ function PlayerState.getCoreMult(player: Player): number
 	return 1
 end
 
--- atordoado por guarda quebrada: não pode atacar/usar poder/esquivar
+-- atordoado: não pode atacar/usar poder/esquivar
 function PlayerState.isStunned(player: Player): boolean
 	local s = states[player]
 	return s ~= nil and os.clock() < s.stunUntil
@@ -111,11 +111,10 @@ function PlayerState.resetCombat(player: Player)
 	if not s then
 		return
 	end
-	s.posture = Constants.Posture.Max
 	s.stunUntil = 0
-	s.blocking = false
 	s.sprinting = false
 	s.sprintHeld = false
+	s.mounted = nil
 	s.comboIndex = 0
 	s.stamina = Constants.Player.MaxStamina
 end
