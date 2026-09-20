@@ -432,6 +432,13 @@ local function buildWorld(): Folder
 		)
 	end)
 
+	-- TEXTURA por último: o mundo inteiro já existe, então uma passada só
+	-- resolve tudo -- inclusive o que outros módulos criaram por conta própria.
+	pcall(function()
+		local n = Build.aplicarVariantes(root)
+		print(("[WorldService] textura   OK   %d pecas com variante PBR"):format(n))
+	end)
+
 	print(("[WorldService] mundo pronto — %d pecas"):format(pieces))
 	return root
 end

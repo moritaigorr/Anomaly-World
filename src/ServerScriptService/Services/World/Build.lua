@@ -343,6 +343,52 @@ function Build.blob(cf: CFrame, diametro: number, altura: number, color: Color3,
 	return p
 end
 
+-- TEXTURAS PBR POR MATERIAL BASE.
+--
+-- O mundo inteiro usava os materiais de fábrica da Roblox. Eles resolvem a
+-- silhueta, mas repetem o mesmo padrão em cada parede da cidade e não têm
+-- relevo: pedra de muralha e pedra de casa ficam indistinguíveis de perto.
+--
+-- Estas variantes foram GERADAS pra este jogo (mapa de cor + normal +
+-- rugosidade) e são aplicadas aqui, num lugar só, pelo material base de cada
+-- peça. Fazer por material em vez de peça a peça significa que toda construção
+-- nova já nasce com a textura certa sem ninguém precisar lembrar.
+--
+-- ONDE ELAS MORAM: MaterialService, ou seja, o arquivo do place -- não o git,
+-- pela mesma razão das malhas geradas. Se sumirem, `MaterialVariant` aponta pra
+-- um nome inexistente, o Roblox cai no material base e o mundo continua de pé.
+local VARIANTES: { [Enum.Material]: string } = {
+	[Enum.Material.Cobblestone] = "AW_PedraMuralha",
+	[Enum.Material.WoodPlanks] = "AW_MadeiraEnvelhecida",
+	[Enum.Material.Plaster] = "AW_RebocoRachado",
+	[Enum.Material.Snow] = "AW_NevePisada",
+}
+
+function Build.aplicarVariantes(alvo: Instance): number
+	local MS = game:GetService("MaterialService")
+	-- só aplica o que realmente existe: nome solto vira material base de novo,
+	-- mas checar evita sujar peças à toa e deixa o número honesto no log.
+	local disponiveis: { [Enum.Material]: string } = {}
+	for mat, nome in VARIANTES do
+		local v = MS:FindFirstChild(nome)
+		if v and v:IsA("MaterialVariant") then
+			disponiveis[mat] = nome
+		end
+	end
+
+	local n = 0
+	for _, d in alvo:GetDescendants() do
+		if d:IsA("BasePart") and not d:IsA("MeshPart") then
+			local nome = disponiveis[d.Material]
+			if nome then
+				d.MaterialVariant = nome
+				n += 1
+			end
+		end
+	end
+	return n
+end
+
 -- MONTE DE NEVE.
 --
 -- Isto era feito com PEÇAS e o resultado eram caixas brancas retangulares

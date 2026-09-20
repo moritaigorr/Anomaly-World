@@ -13,6 +13,7 @@ local Assets = require(script.Parent.Assets)
 local Build = require(script.Parent.Build)
 local Forge = require(script.Parent.Forge)
 local Market = require(script.Parent.Market)
+local Tavern = require(script.Parent.Tavern)
 local C = Build.C
 
 local Town = {}
@@ -666,6 +667,12 @@ local function canPlace(x: number, z: number, w: number, d: number): boolean
 	if math.sqrt(bx * bx + bz * bz) < Market.BANK_CLEAR + reach then
 		return false
 	end
+	-- a taverna tem lote próprio: ela é construída peça a peça pra ter vão de
+	-- porta, então não pode dividir espaço com casa nenhuma
+	local tx, tz = x - Tavern.POS.X, z - Tavern.POS.Z
+	if math.sqrt(tx * tx + tz * tz) < Tavern.CLEAR + reach then
+		return false
+	end
 	return true
 end
 
@@ -1094,6 +1101,7 @@ function Town.build()
 	for _, f in FORGES do
 		Forge.build(f.pos, f.rot)
 	end
+	Tavern.build()
 	buildDistricts()
 	buildKeep()
 
